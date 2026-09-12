@@ -12,13 +12,19 @@ across two copies of the same data: a dump/restore rewrites physical order, so a
 orders tied documents differently from its source while every row, score and version is
 identical.
 
-It surfaces as a changed RESULT COUNT rather than a reordering, because a caller downstream
-truncates by token budget and stops at the first fact that does not fit. Different tie order,
-different texts near the cut, different number of facts returned.
+What that does to a recall depends on the budget filter behind it. Up to v0.9.1 the filter
+stopped at the first fact that did not fit, so tie order changed HOW MANY facts came back. From
+v0.9.2 `select_facts_within_budget` skips an oversized fact and keeps going, which mostly steadies
+the count but not the contents: different facts still come back. The end-to-end test at the
+bottom compares the facts themselves, so it keeps meaning something across that change.
 """
 
+import itertools
+
+from hindsight_api.engine.fact_budget import select_facts_within_budget
 from hindsight_api.engine.search.fusion import reciprocal_rank_fusion
 from hindsight_api.engine.search.types import RetrievalResult
+from hindsight_api.engine.token_encoding import count_tokens
 
 
 def _arm(ids: list[str]) -> list[RetrievalResult]:
@@ -62,3 +68,51 @@ def test_tiebreak_is_by_id_ascending_and_score_still_dominates():
 def test_order_is_stable_across_repeated_calls():
     arms = [_arm(["q", "r"]), _arm(["r", "s"]), _arm(["s", "q"])]
     assert len({tuple(_fuse_ids(arms)) for _ in range(25)}) == 1
+
+
+_RANKS = 30
+_BUDGET_FRACTION = 0.4
+
+
+def _words(arm: str, rank: int) -> str:
+    # Deterministic, uneven lengths (1-23 words): tie order only changes what fits when the tied
+    # facts differ in size.
+    return " ".join(["memory"] * ((rank * 7919 + ord(arm) * 104729) % 23 + 1))
+
+
+def test_budgeted_recall_returns_the_same_facts_whatever_order_the_arms_arrive():
+    """End to end through the real fusion AND the real recall budget filter.
+
+    This is what a caller sees, so it is the property that has to survive an upgrade: the same
+    candidates must yield the same facts no matter which arm the database returned first. Every
+    arrival order of three arms is tried. Compares the selected facts, not their count, because
+    the v0.9.2 filter keeps counts steady while score-only fusion still changes the contents.
+    """
+    arms = {
+        arm: [
+            RetrievalResult(id=f"{arm}{rank:02d}", text=_words(arm, rank), fact_type="world")
+            for rank in range(1, _RANKS + 1)
+        ]
+        for arm in "abc"
+    }
+    total = sum(count_tokens(r.text) for results in arms.values() for r in results)
+    budget = int(total * _BUDGET_FRACTION)
+
+    selections = {}
+    for order in itertools.permutations("abc"):
+        fused = reciprocal_rank_fusion([arms[a] for a in order])
+        selections[order] = select_facts_within_budget(
+            fact_ids_ordered=[c.retrieval.id for c in fused],
+            text_by_id={c.retrieval.id: c.retrieval.text for c in fused},
+            max_tokens=budget,
+            count_tokens=count_tokens,
+        ).ids
+
+    sizes = sorted({len(ids) for ids in selections.values()})
+    assert all(0 < n < _RANKS * 3 for n in sizes), (
+        f"the budget must truncate for tie order to matter; selected {sizes} of {_RANKS * 3}"
+    )
+    distinct = {tuple(ids) for ids in selections.values()}
+    assert len(distinct) == 1, (
+        f"{len(distinct)} different fact selections across the 6 arm orders (sizes {sizes})"
+    )
