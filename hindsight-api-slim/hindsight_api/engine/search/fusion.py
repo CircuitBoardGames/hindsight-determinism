@@ -94,8 +94,20 @@ def reciprocal_rank_fusion(result_lists: list[list[RetrievalResult]], k: int = 6
 
     # Combine into final results with metadata
     merged_results = []
+    # Sort by score, then by doc id as a TOTAL ORDER. Without the second key this sort is
+    # stable-by-insertion-order among ties, and the insertion order is the order the arms
+    # returned rows -- i.e. the database's scan order. Ties here are not rare: the vector arm
+    # runs once per fact_type, so a document at rank r in any list scores exactly 1/(k + r) and
+    # every rank is an n-way exact tie. Measured on a 339-row bank: 120 candidates, 40 distinct
+    # scores, all 120 in tie groups of 3.
+    #
+    # That matters because a caller downstream truncates by TOKEN budget and stops at the first
+    # fact that does not fit, so the tie order decides how many results the caller returns. The
+    # observable symptom was one database answering a fixed query with 34 results while a
+    # byte-identical restore of it answered 30, then 35 -- stable per copy, because physical row
+    # order is stable within a copy and a restore rewrites it.
     for rrf_rank, (doc_id, rrf_score) in enumerate(
-        sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True), start=1
+        sorted(rrf_scores.items(), key=lambda x: (-x[1], str(x[0]))), start=1
     ):
         merged_candidate = MergedCandidate(
             retrieval=all_retrievals[doc_id],
