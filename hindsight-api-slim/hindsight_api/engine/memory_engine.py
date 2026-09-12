@@ -2377,6 +2377,17 @@ def _provider_default_base_url(provider: str | None) -> str:
             return ""
 
 
+def _order_arm(results: list, score_attr: str) -> None:
+    """Sort one retrieval arm best-first IN PLACE as a TOTAL order: score descending, then id.
+
+    RRF assigns ranks by list position, so results with an equal score must not stay in whatever order
+    the database returned them: a dump/restore rewrites that order, and the ranks -- then the fused
+    order, then the token-budget cut -- follow it (hub#1029). A missing or None score counts as 0.
+    """
+    results.sort(key=lambda r: (-(getattr(r, score_attr, 0) or 0), str(r.id)))
+
+
+
 class MemoryEngine(MemoryEngineInterface):
     """
     Advanced memory system using temporal and semantic linking with PostgreSQL.
@@ -9014,15 +9025,18 @@ class MemoryEngine(MemoryEngineInterface):
             if not temporal_results:
                 temporal_results = None
 
-            # Sort combined results by score (descending) so higher-scored results
-            # get better ranks in the trace, regardless of fact type
-            semantic_results.sort(key=lambda r: r.similarity if hasattr(r, "similarity") else 0, reverse=True)
-            bm25_results.sort(key=lambda r: r.bm25_score if hasattr(r, "bm25_score") else 0, reverse=True)
-            graph_results.sort(key=lambda r: r.activation if hasattr(r, "activation") else 0, reverse=True)
+            # Sort combined results by score (descending) so higher-scored results get better ranks,
+            # regardless of fact type. The id is a TOTAL-ORDER tiebreak: RRF ranks by position, so
+            # without it equal scores keep the database's scan order, and two copies of the same data
+            # hand fusion different ranks (hub#1029: 20 of 24 queries returned different facts from a
+            # physically reordered restore).
+            _order_arm(semantic_results, "similarity")
+            _order_arm(bm25_results, "bm25_score")
+            _order_arm(graph_results, "activation")
             if temporal_results:
                 # temporal_score is the temporal arm's own ranking signal (float | None on
                 # RetrievalResult); combined_score only exists on ScoredResult, after fusion.
-                temporal_results.sort(key=lambda r: r.temporal_score or 0, reverse=True)
+                _order_arm(temporal_results, "temporal_score")
 
             # Cap each source independently before fusion so a single
             # over-expanding backend (e.g. VectorChord returning hundreds of
