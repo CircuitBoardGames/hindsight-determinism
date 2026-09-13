@@ -1,0 +1,89 @@
+name: CI
+
+# Forgejo-only slim copy of .github/workflows/test.yml (hub#1029). The upstream file is a
+# 5000+ line monorepo CI matrix covering dozens of integrations, several needing secrets this
+# runner does not have (GCP/Vertex, etc). Once this file exists, Forgejo reads ONLY
+# .forgejo/workflows/ and ignores .github/workflows/ entirely (see
+# wiki-vault/wiki/gotchas -- ".forgejo/workflows/ SHADOWS .github/workflows/"), so this carries
+# just the one job relevant to changes made on this fork's release branches: the core Python
+# package build/smoke-test that covers hindsight-api-slim, which is what the determinism fixes
+# touch. Everything else in the upstream file runs on GitHub only, unaffected by this.
+#
+# Widened from upstream's `branches: [main]` to also cover this fork's release branches --
+# PRs land against `airoboros/x.y` here, not `main`.
+on:
+  pull_request:
+    branches: [ main, 'airoboros/**' ]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      pull-requests: read
+    outputs:
+      core: ${{ steps.filter.outputs.core }}
+      ci: ${{ steps.filter.outputs.ci }}
+    steps:
+    - uses: actions/checkout@v6
+
+    - uses: dorny/paths-filter@v4
+      id: filter
+      with:
+        filters: |
+          core:
+            - 'hindsight-api-slim/**'
+            - 'hindsight-api/**'
+            - 'scripts/**'
+            - '.python-version'
+            - '.env.example'
+          ci:
+            - '.forgejo/workflows/**'
+
+  build-api-python-versions:
+    needs: [detect-changes]
+    if: >-
+      (github.event_name == 'workflow_dispatch' ||
+      needs.detect-changes.outputs.core == 'true' ||
+      needs.detect-changes.outputs.ci == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12', '3.13', '3.14']
+
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        ref: ${{ github.event.pull_request.head.sha || '' }}
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Build hindsight-api
+      working-directory: ./hindsight-api-slim
+      run: uv build
+
+    # `uv build` only packages the source; it does not prove the dependency set
+    # resolves or that the code imports on this interpreter. Install into a fresh
+    # env and run a byte-compile + import smoke test so the matrix actually
+    # exercises each Python version.
+    - name: Install and smoke-test on Python ${{ matrix.python-version }}
+      working-directory: ./hindsight-api-slim
+      run: |
+        uv venv --python ${{ matrix.python-version }} .venv-smoke
+        VIRTUAL_ENV=.venv-smoke uv pip install .
+        .venv-smoke/bin/python -m compileall -q hindsight_api
+        .venv-smoke/bin/python -c "import hindsight_api, hindsight_api.main, hindsight_api.config; from hindsight_api.engine import memory_engine, llm_wrapper; print('import OK')"
