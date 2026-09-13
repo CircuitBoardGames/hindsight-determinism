@@ -13,6 +13,13 @@ name: CI
 # found" cloning it), same class of gap as github/codeql-action. With only one job left, an
 # unconditional run is simpler than a path filter anyway.
 #
+# No actions/setup-python here either: this runner is host-mode (bare Debian 13, not a
+# container), and setup-python's manifest has no matching download for it -- measured, every
+# matrix leg failed identically with "The version '3.13' with architecture 'x64' was not found
+# for Debian 13". uv provisions its own interpreters (astral's portable builds, a different
+# source from actions/python-versions) via `--python`, which is why it is passed to both `uv
+# build` and `uv venv` below instead of relying on a preinstalled/actions-provided one.
+#
 # Widened from upstream's `branches: [main]` to also cover this fork's release branches --
 # PRs land against `airoboros/x.y` here, not `main`.
 on:
@@ -42,14 +49,9 @@ jobs:
       with:
         enable-cache: true
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v6
-      with:
-        python-version: ${{ matrix.python-version }}
-
     - name: Build hindsight-api
       working-directory: ./hindsight-api-slim
-      run: uv build
+      run: uv build --python ${{ matrix.python-version }}
 
     # `uv build` only packages the source; it does not prove the dependency set
     # resolves or that the code imports on this interpreter. Install into a fresh
