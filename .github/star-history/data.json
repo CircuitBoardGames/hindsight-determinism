@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "repository": "vectorize-io/hindsight",
+  "repository": "CircuitBoardGames/hindsight-determinism",
   "backfilledAt": "2026-08-03T10:36:26.721Z",
   "backfill": [
     {
@@ -1072,6 +1072,10 @@
     {
       "date": "2026-08-25",
       "stars": 21053
+    },
+    {
+      "date": "2026-09-26",
+      "stars": 0
     }
   ]
 }
