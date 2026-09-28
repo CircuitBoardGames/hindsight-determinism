@@ -10,6 +10,10 @@ permissions:
 
 jobs:
   update:
+    # Upstream's daily star-history commit. On a fork it pushed a bot commit onto the release
+    # branch every day (2026-09-28: 178895e9 on GitHub, ahead of the hub's tip), so the mirror
+    # and the fork diverged daily. Runs only in the upstream repository.
+    if: github.repository == 'vectorize-io/hindsight'
     concurrency:
       group: star-history
       cancel-in-progress: false
