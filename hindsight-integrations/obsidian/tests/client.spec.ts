@@ -34,7 +34,7 @@ describe("HindsightClient", () => {
     expect(params.method).toBe("POST");
     expect(params.url).toBe("https://api.example.com/v1/default/banks/bank%20x/memories");
     expect(params.headers?.Authorization).toBe("Bearer secret");
-    expect(params.headers?.["User-Agent"]).toMatch(/^hindsight-obsidian\/\d+\.\d+\.\d+$/);
+    expect(params.headers?.["User-Agent"]).toMatch(/^hindsight-obsidian\/\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/);
     const body = JSON.parse(params.body ?? "{}");
     expect(body.items[0]).toMatchObject({
       content: "body text",

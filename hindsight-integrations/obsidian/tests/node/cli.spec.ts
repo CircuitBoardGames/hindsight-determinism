@@ -47,6 +47,21 @@ describe("parseCliArgs", () => {
     });
   });
 
+  it("collects repeatable --tag, de-duplicated, into the config and the index identity", () => {
+    const o = parseCliArgs([...base, "--tag", "project:x", "--tag", "team:y", "--tag", "project:x"]);
+    expect(o.extraTags).toEqual(["project:x", "team:y"]);
+    expect(o.identity.extraTags).toEqual(["project:x", "team:y"]);
+    expect(buildConfig(o).extraTags).toEqual(["project:x", "team:y"]);
+    // A tag set is a different sync target: its own default index file.
+    expect(o.indexPath).not.toBe(parseCliArgs(base).indexPath);
+  });
+
+  it("leaves the identity untouched when no --tag is given", () => {
+    const o = parseCliArgs(base);
+    expect(o.extraTags).toEqual([]);
+    expect("extraTags" in o.identity).toBe(false);
+  });
+
   it("routes different banks to different default index files", () => {
     const a = parseCliArgs(["--vault", "/v", "--bank", "a", "--api-url", "https://h"]);
     const b = parseCliArgs(["--vault", "/v", "--bank", "b", "--api-url", "https://h"]);

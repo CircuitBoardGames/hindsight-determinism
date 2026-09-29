@@ -43,6 +43,8 @@ export interface SyncConfig {
   observationScopes?: ObservationScopes;
   /** Omitted = `created` (frontmatter created/date, else file birth time). */
   timestampFrom?: TimestampSource;
+  /** Extra tags stamped on every document, e.g. a consumer's recall scope tag. */
+  extraTags?: string[];
 }
 
 export interface ReconcileSummary {
@@ -165,6 +167,7 @@ export class SyncEngine {
       ...folderTags(file.path),
       ...dateTags("created", Number.isFinite(createdMs) ? createdMs : file.stat.ctime),
       ...dateTags("updated", file.stat.mtime),
+      ...(this.config.extraTags ?? []),
     ];
     const tags = [...new Set([...note.tags, ...scopeTags])];
     // `path` lets API consumers (automations) map a recall hit back to the note.

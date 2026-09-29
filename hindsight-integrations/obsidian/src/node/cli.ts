@@ -46,6 +46,8 @@ export interface CliOptions {
   prefixDocId: boolean;
   observationScopes?: ObservationScopes;
   timestampFrom?: TimestampSource;
+  /** Extra tags stamped on every document (`--tag`, repeatable). */
+  extraTags?: string[];
   indexPath: string;
   watch: boolean;
   /** Destination the sync index is bound to (issue #3257). */
@@ -73,6 +75,8 @@ Options:
                         Date facts by the note's "created" time (default) or
                         its "updated" time (frontmatter updated/modified, else
                         file mtime) — use updated for living documents
+  --tag <tag>           Add this tag to every document (repeatable), e.g. the
+                        project tag a consumer scopes its recall by
   --index <file>        Sync-index JSON path (default: a per-target file under
                         ~/.hindsight/obsidian/, scoped to bank + API + vault)
   --watch               Keep running and sync changes as they happen
@@ -113,6 +117,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
       "prefix-doc-id": { type: "boolean", default: false },
       "observation-scopes": { type: "string" },
       "timestamp-from": { type: "string" },
+      tag: { type: "string", multiple: true },
       index: { type: "string" },
       watch: { type: "boolean", default: false },
       help: { type: "boolean", default: false },
@@ -135,6 +140,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
   if (!apiUrl) throw new UsageError("--api-url is required (or set HINDSIGHT_API_URL)");
   const observationScopes = parseObservationScopes(values["observation-scopes"]);
   const timestampFrom = parseTimestampFrom(values["timestamp-from"]);
+  const extraTags = [...new Set(values.tag ?? [])];
 
   const identity: IndexIdentity = {
     apiOrigin: canonicalApiOrigin(apiUrl),
@@ -142,6 +148,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
     vaultPath: vault,
     vaultName,
     prefixDocId: values["prefix-doc-id"] ?? false,
+    ...(extraTags.length ? { extraTags } : {}),
   };
 
   return {
@@ -155,6 +162,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
     prefixDocId: values["prefix-doc-id"] ?? false,
     observationScopes,
     timestampFrom,
+    extraTags,
     indexPath: values.index || defaultIndexPath(identity),
     watch: values.watch ?? false,
     identity,
@@ -170,6 +178,7 @@ export function buildConfig(opts: CliOptions): SyncConfig {
     prefixDocId: opts.prefixDocId,
     observationScopes: opts.observationScopes,
     timestampFrom: opts.timestampFrom,
+    ...(opts.extraTags?.length ? { extraTags: opts.extraTags } : {}),
   };
 }
 
