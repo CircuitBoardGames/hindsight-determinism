@@ -109,6 +109,20 @@ describe("json-index", () => {
       );
     });
 
+    it("refuses an index built with a different extra-tag set, naming the field", async () => {
+      const path = join(dir, "idx.json");
+      await makePersist(path, IDENTITY, () => "T1")(INDEX);
+      await expect(loadIndex(path, withField({ extraTags: ["project:x"] }))).rejects.toThrow(
+        /extraTags.*project:x/s
+      );
+    });
+
+    it("treats an empty extra-tag set as no tags", async () => {
+      const path = join(dir, "idx.json");
+      await makePersist(path, IDENTITY, () => "T1")(INDEX);
+      expect(await loadIndex(path, withField({ extraTags: [] }))).toEqual(INDEX);
+    });
+
     it("refuses a legacy index that has no identity metadata", async () => {
       const path = join(dir, "legacy.json");
       // The pre-3257 envelope: syncIndex + lastSyncAt, no identity.
@@ -137,6 +151,17 @@ describe("json-index", () => {
       const p2 = defaultIndexPath({ ...IDENTITY });
       expect(identityFingerprint(IDENTITY)).toBe(identityFingerprint({ ...IDENTITY }));
       expect(p1).toBe(p2);
+    });
+
+    it("keeps the upstream fingerprint without extra tags, and changes it with them", () => {
+      expect(identityFingerprint(withField({ extraTags: [] }))).toBe(identityFingerprint(IDENTITY));
+      expect(identityFingerprint(withField({ extraTags: ["project:x"] }))).not.toBe(
+        identityFingerprint(IDENTITY)
+      );
+      // Order and duplicates do not matter.
+      expect(identityFingerprint(withField({ extraTags: ["b", "a", "a"] }))).toBe(
+        identityFingerprint(withField({ extraTags: ["a", "b"] }))
+      );
     });
   });
 

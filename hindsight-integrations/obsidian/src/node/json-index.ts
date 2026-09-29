@@ -39,6 +39,17 @@ export interface IndexIdentity {
   /** With {@link prefixDocId}, part of the document-id namespace. */
   vaultName: string;
   prefixDocId: boolean;
+  /**
+   * Extra tags stamped on every document (`--tag`). Part of the identity because
+   * a changed tag set must re-retain every note, and the mtime/hash gates would
+   * otherwise skip them. Absent or empty = the upstream identity, unchanged.
+   */
+  extraTags?: string[];
+}
+
+/** Canonical form of the extra tags: sorted, de-duplicated, empty = none. */
+function tagKey(identity: IndexIdentity): string[] {
+  return [...new Set(identity.extraTags ?? [])].sort();
 }
 
 interface IndexFile {
@@ -81,6 +92,8 @@ export function identityFingerprint(identity: IndexIdentity): string {
     identity.vaultPath,
     identity.vaultName,
     identity.prefixDocId,
+    // Only when present, so an identity without extra tags keeps its fingerprint.
+    ...(tagKey(identity).length ? [tagKey(identity)] : []),
   ]);
   return createHash("sha256").update(canonical).digest("hex").slice(0, 12);
 }
@@ -103,9 +116,14 @@ function identityMismatches(want: IndexIdentity, have: IndexIdentity): string[] 
     "vaultName",
     "prefixDocId",
   ];
-  return keys
+  const mismatches = keys
     .filter((key) => want[key] !== have[key])
     .map((key) => `${key}: ${JSON.stringify(have[key])} → ${JSON.stringify(want[key])}`);
+  const [wantTags, haveTags] = [tagKey(want), tagKey(have)];
+  if (JSON.stringify(wantTags) !== JSON.stringify(haveTags)) {
+    mismatches.push(`extraTags: ${JSON.stringify(haveTags)} → ${JSON.stringify(wantTags)}`);
+  }
+  return mismatches;
 }
 
 /**

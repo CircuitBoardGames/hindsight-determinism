@@ -106,6 +106,18 @@ describe("SyncEngine", () => {
     expect(opts.metadata.vault).toBe("Personal");
   });
 
+  it("stamps configured extra tags on every document, beside the auto-scope tags", async () => {
+    const files = { "Work/note.md": { content: "body", mtime: 1, ctime: 1 } };
+    const { engine, client } = makeEngine(files, {}, { extraTags: ["project:claudecode"] });
+
+    await engine.reconcile();
+
+    const [, , , opts] = client.retain.mock.calls[0] as [string, string, string, { tags: string[] }];
+    expect(opts.tags).toEqual(
+      expect.arrayContaining(["project:claudecode", "vault:Vault", "folder:Work"])
+    );
+  });
+
   it("passes observation scope through without changing note provenance", async () => {
     const created = Date.UTC(2026, 2, 15);
     const updated = Date.UTC(2026, 5, 20);

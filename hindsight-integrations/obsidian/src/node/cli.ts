@@ -40,6 +40,8 @@ export interface CliOptions {
   vaultName: string;
   prefixDocId: boolean;
   observationScopes?: ObservationScopes;
+  /** Extra tags stamped on every document (`--tag`, repeatable). */
+  extraTags?: string[];
   indexPath: string;
   watch: boolean;
   /** Destination the sync index is bound to (issue #3257). */
@@ -63,6 +65,8 @@ Options:
   --observation-scopes <mode>
                         Observation consolidation: combined, shared, per_tag,
                         or all_combinations (default: server behavior)
+  --tag <tag>           Add this tag to every document (repeatable), e.g. the
+                        project tag a consumer scopes its recall by
   --index <file>        Sync-index JSON path (default: a per-target file under
                         ~/.hindsight/obsidian/, scoped to bank + API + vault)
   --watch               Keep running and sync changes as they happen
@@ -96,6 +100,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
       "vault-name": { type: "string" },
       "prefix-doc-id": { type: "boolean", default: false },
       "observation-scopes": { type: "string" },
+      tag: { type: "string", multiple: true },
       index: { type: "string" },
       watch: { type: "boolean", default: false },
       help: { type: "boolean", default: false },
@@ -117,6 +122,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
   const apiUrl = values["api-url"] || process.env.HINDSIGHT_API_URL || "";
   if (!apiUrl) throw new UsageError("--api-url is required (or set HINDSIGHT_API_URL)");
   const observationScopes = parseObservationScopes(values["observation-scopes"]);
+  const extraTags = [...new Set(values.tag ?? [])];
 
   const identity: IndexIdentity = {
     apiOrigin: canonicalApiOrigin(apiUrl),
@@ -124,6 +130,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
     vaultPath: vault,
     vaultName,
     prefixDocId: values["prefix-doc-id"] ?? false,
+    ...(extraTags.length ? { extraTags } : {}),
   };
 
   return {
@@ -136,6 +143,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
     vaultName,
     prefixDocId: values["prefix-doc-id"] ?? false,
     observationScopes,
+    extraTags,
     indexPath: values.index || defaultIndexPath(identity),
     watch: values.watch ?? false,
     identity,
@@ -150,6 +158,7 @@ export function buildConfig(opts: CliOptions): SyncConfig {
     vaultName: opts.vaultName,
     prefixDocId: opts.prefixDocId,
     observationScopes: opts.observationScopes,
+    ...(opts.extraTags?.length ? { extraTags: opts.extraTags } : {}),
   };
 }
 
