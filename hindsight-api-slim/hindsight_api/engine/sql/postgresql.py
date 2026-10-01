@@ -428,7 +428,11 @@ class PostgreSQLDialect(SQLDialect):
             f"   {tags_clause}"
             f"   {groups_clause}"
             f"   {extra_where}"
-            f" ORDER BY {bm25_order_by}"
+            # `, id` makes the LIMIT cut a TOTAL order (hub#1029). BM25 scores tie exactly and often, and
+            # without it the rows that survive a cut through a tie are the database's scan order -- which a
+            # restore rewrites, so a restored copy retrieved a different candidate set. _order_arm re-sorts
+            # after retrieval and cannot bring back a row the SQL already dropped.
+            f" ORDER BY {bm25_order_by}, id"
             f" LIMIT {limit_param})"
         )
 
