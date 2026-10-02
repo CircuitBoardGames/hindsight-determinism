@@ -7081,6 +7081,17 @@ class MemoryEngine(MemoryEngineInterface):
             # Fire-and-forget: the mapping is patched on a background task so it
             # never adds latency to the retain response.
             self._llm_recorder.attach_memory_ids(trace_context_of(retain_llm), created=created_ids)
+            if resolved_config.retain_dedup and created_ids and self._llm_config.provider != "none":
+                from .retain.dedup import dedup_retained
+
+                await dedup_retained(
+                    self,
+                    bank_id,
+                    created_ids,
+                    retain_llm,
+                    resolved_config.retain_dedup_min_similarity,
+                    request_context,
+                )
             return result
 
     # How many times an append re-reads the document and redoes itself after

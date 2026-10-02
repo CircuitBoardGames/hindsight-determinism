@@ -782,6 +782,8 @@ ENV_RETAIN_MAX_COMPLETION_TOKENS = "HINDSIGHT_API_RETAIN_MAX_COMPLETION_TOKENS"
 ENV_RETAIN_CHUNK_SIZE = "HINDSIGHT_API_RETAIN_CHUNK_SIZE"
 ENV_RETAIN_STRUCTURED_CHUNK_SIZE = "HINDSIGHT_API_RETAIN_STRUCTURED_CHUNK_SIZE"
 ENV_RETAIN_EXTRACT_CAUSAL_LINKS = "HINDSIGHT_API_RETAIN_EXTRACT_CAUSAL_LINKS"
+ENV_RETAIN_DEDUP = "HINDSIGHT_API_RETAIN_DEDUP"
+ENV_RETAIN_DEDUP_MIN_SIMILARITY = "HINDSIGHT_API_RETAIN_DEDUP_MIN_SIMILARITY"
 ENV_RETAIN_OPTIONAL_FACT_DIMENSIONS = "HINDSIGHT_API_RETAIN_OPTIONAL_FACT_DIMENSIONS"
 ENV_RETAIN_EXTRACTION_MODE = "HINDSIGHT_API_RETAIN_EXTRACTION_MODE"
 ENV_RETAIN_MISSION = "HINDSIGHT_API_RETAIN_MISSION"
@@ -1632,6 +1634,12 @@ DEFAULT_BANK_STATS_CACHE_MAX_ENTRIES = 1024  # LRU bound across (schema, bank) k
 DEFAULT_RETAIN_MAX_COMPLETION_TOKENS = 64000  # Max tokens for fact extraction LLM call
 DEFAULT_RETAIN_CHUNK_SIZE = 3000  # Max chars per chunk for fact extraction
 DEFAULT_RETAIN_EXTRACT_CAUSAL_LINKS = True  # Extract causal links between facts
+# Write-time dedup of world/experience facts (engine/retain/dedup.py). Off by default: it
+# spends an LLM call per retain batch that finds a near neighbour, and it invalidates facts.
+DEFAULT_RETAIN_DEDUP = False
+# Cosine floor for a stored fact to be put to the dedup LLM as a candidate. Only a candidate
+# costs anything: a batch whose facts have none above it makes no LLM call.
+DEFAULT_RETAIN_DEDUP_MIN_SIMILARITY = 0.85
 # Let a fact leave when/where/who/why empty instead of filling them with "N/A" (#4457).
 # Off by default because it is not free: the four fields become `string | null` and the
 # prompt stops naming a placeholder, and on a capable model that measurably changes what
@@ -3342,6 +3350,8 @@ class HindsightConfig:
     retain_chunk_size: int
     retain_structured_chunk_size: int | None
     retain_extract_causal_links: bool
+    retain_dedup: bool
+    retain_dedup_min_similarity: float
     retain_optional_fact_dimensions: bool
     retain_extraction_mode: str
     retain_mission: str | None
@@ -3737,6 +3747,9 @@ class HindsightConfig:
         "retain_default_strategy",
         "retain_strategies",
         "retain_chunk_batch_size",
+        # Write-time dedup: a bank can opt in (or out) on its own.
+        "retain_dedup",
+        "retain_dedup_min_similarity",
         # How many images one extraction chunk may carry. Shapes extraction the
         # same way retain_chunk_size does, so a bank ingesting screenshot-heavy
         # documents can tune it.
@@ -4902,6 +4915,10 @@ class HindsightConfig:
                 ENV_RETAIN_EXTRACT_CAUSAL_LINKS, str(DEFAULT_RETAIN_EXTRACT_CAUSAL_LINKS)
             ).lower()
             == "true",
+            retain_dedup=_parse_boolean_env(ENV_RETAIN_DEDUP, DEFAULT_RETAIN_DEDUP),
+            retain_dedup_min_similarity=float(
+                os.getenv(ENV_RETAIN_DEDUP_MIN_SIMILARITY, str(DEFAULT_RETAIN_DEDUP_MIN_SIMILARITY))
+            ),
             retain_optional_fact_dimensions=_parse_boolean_env(
                 ENV_RETAIN_OPTIONAL_FACT_DIMENSIONS,
                 DEFAULT_RETAIN_OPTIONAL_FACT_DIMENSIONS,
