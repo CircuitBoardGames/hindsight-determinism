@@ -47,9 +47,10 @@ class _FakeSession:
     # mixed-script text at twice our tokenizer (#5715), so the window here does too.
     window: int | None = None
 
-    def __init__(self, ranking: dict[str, float], cut_level: float = 0.0):
+    def __init__(self, ranking: dict[str, float], cut_level: float = 0.0, cut_probabilities: dict | None = None):
         self.ranking = ranking
         self.cut_level = cut_level
+        self.cut_probabilities = cut_probabilities
         self.posted: list[dict] = []
         self.urls: list[str] = []
         self.refused: list[dict] = []
@@ -77,6 +78,8 @@ class _FakeSession:
                 "legend": dict(enumerate(question["criteria"])),
                 "confidence": 0.9,
             }
+            if self.cut_probabilities is not None:
+                answer["probabilities"] = self.cut_probabilities
         yield _FakeResponse({"answers": {question_id: answer}, "usage": {"input_tokens": 1, "output_tokens": 1}})
 
     def post(self, url, headers=None, json=None):
@@ -98,12 +101,13 @@ def _encoder(
     ranking: dict[str, float],
     cut_level: float = 0.0,
     max_question_tokens: int | None = None,
+    cut_probabilities: dict | None = None,
     **kwargs,
 ):
     encoder = TypeSafeCrossEncoder(api_key="k", **kwargs)
     if max_question_tokens is not None:
         encoder.MAX_QUESTION_TOKENS = max_question_tokens
-    session = _FakeSession(ranking, cut_level)
+    session = _FakeSession(ranking, cut_level, cut_probabilities)
     encoder._session = session
     return encoder, session
 
@@ -245,6 +249,35 @@ class TestCut:
         scores = await encoder._predict([("q", "a"), ("q", "b"), ("q", "c")])
 
         assert all(score > 0.0 for score in scores), "level 2 keeps the first three"
+
+    # A torn answer: 60% "first only", the rest spread deeper. Its mean (0.8) rounds to level 1.
+    TORN = {"0": 0.6, "1": 0.15, "2": 0.1, "3": 0.15, "4": 0.0, "5": 0.0}
+    RANKING = {"c0": 0.4, "c1": 0.3, "c2": 0.2, "c3": 0.1}
+
+    @pytest.mark.asyncio
+    async def test_a_quantile_cut_keeps_deeper_when_the_answer_is_torn(self):
+        """0.8 is first covered at level 2 (0.6 + 0.15 + 0.1), so the first three survive."""
+        encoder, _ = _encoder(
+            self.RANKING, cut_level=0.8, cut_probabilities=self.TORN, prune_candidates=True, cut_quantile=0.8
+        )
+        scores = await encoder._predict([("q", d) for d in "abcd"])
+        assert sum(1 for score in scores if score > 0.0) == 3
+
+    @pytest.mark.asyncio
+    async def test_without_a_quantile_the_rounded_mean_decides(self):
+        encoder, _ = _encoder(self.RANKING, cut_level=0.8, cut_probabilities=self.TORN, prune_candidates=True)
+        scores = await encoder._predict([("q", d) for d in "abcd"])
+        assert sum(1 for score in scores if score > 0.0) == 2
+
+    @pytest.mark.asyncio
+    async def test_a_quantile_falls_back_to_the_mean_when_no_probabilities_come_back(self):
+        encoder, _ = _encoder(self.RANKING, cut_level=0.8, prune_candidates=True, cut_quantile=0.8)
+        scores = await encoder._predict([("q", d) for d in "abcd"])
+        assert sum(1 for score in scores if score > 0.0) == 2
+
+    def test_a_quantile_outside_zero_to_one_is_refused(self):
+        with pytest.raises(ValueError, match="cut_quantile"):
+            TypeSafeCrossEncoder(api_key="k", cut_quantile=1.5)
 
     @pytest.mark.asyncio
     async def test_the_cut_never_empties_the_result(self):
@@ -392,9 +425,11 @@ class TestFactory:
             reranker_typesafe_base_url="https://api.typesafe.ai",
             reranker_typesafe_max_concurrent=8,
             reranker_typesafe_prune_candidates=True,
+            reranker_typesafe_cut_quantile=0.8,
         )
         with patch("hindsight_api.config.get_config", return_value=config):
             encoder = create_cross_encoder_from_env()
+        assert encoder.cut_quantile == 0.8
 
         assert encoder.provider_name == "typesafe"
         assert encoder.model == "jev-latest"
@@ -410,6 +445,11 @@ class TestFactory:
         config = HindsightConfig.from_env()
         assert config.reranker_typesafe_model == "jev-latest"
         assert config.reranker_typesafe_prune_candidates is False
+        assert config.reranker_typesafe_cut_quantile is None
+
+    def test_the_cut_quantile_is_read_from_the_env(self, monkeypatch):
+        monkeypatch.setenv("HINDSIGHT_API_RERANKER_TYPESAFE_CUT_QUANTILE", "0.8")
+        assert HindsightConfig.from_env().reranker_typesafe_cut_quantile == 0.8
 
     @pytest.mark.asyncio
     async def test_base_url_is_honoured(self):
