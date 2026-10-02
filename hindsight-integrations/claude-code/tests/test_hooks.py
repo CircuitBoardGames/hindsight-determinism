@@ -875,3 +875,77 @@ class TestRetainHook:
             mod.main()
 
         assert "called" not in captured
+
+
+# ---------------------------------------------------------------------------
+# retain hook driven by a second harness (omp): per-call overrides in hook_input
+# ---------------------------------------------------------------------------
+
+OMP_SETTINGS = {"retainContext": "claude-code", "retainTags": ["{session_id}", "project:claudecode"]}
+SESSION_NOTIFY = (
+    '<session-notify sender-uid="1001" relation="same-user">\n'
+    "Hooks are re-read from disk; run /reload.\n</session-notify>"
+)
+
+
+def _retains(tmp_path, monkeypatch, messages, hook_extra=None, settings=None, session_id="sess-omp"):
+    """Run retain.py once; return every retain POST body it made."""
+    transcript = make_transcript_file(tmp_path, messages)
+    hook_input = {**make_hook_input(transcript_path=transcript, session_id=session_id), **(hook_extra or {})}
+    calls = []
+
+    def capture(req, timeout=None):
+        if "/memories" in req.full_url and "/recall" not in req.full_url:
+            calls.append(json.loads(req.data.decode()))
+        return FakeHTTPResponse({})
+
+    _run_hook("retain", hook_input, monkeypatch, tmp_path, urlopen_side_effect=capture, extra_settings=settings)
+    return calls
+
+
+class TestRetainSecondHarness:
+    TURN = [{"role": "user", "content": "decide on sqlite"}, {"role": "assistant", "content": "ok, sqlite"}]
+    OVERRIDES = {
+        "retain_context": "omp",
+        "retain_tags": ["project:claudecode-box"],
+        "source_timestamp": "2026-10-02T21:52:55.801Z",
+    }
+
+    def test_overrides_replace_context_tags_and_send_timestamp(self, monkeypatch, tmp_path):
+        calls = _retains(tmp_path, monkeypatch, self.TURN, self.OVERRIDES, OMP_SETTINGS)
+        item = calls[0]["items"][0]
+        assert item["context"] == "omp"
+        assert item["tags"] == ["project:claudecode-box"]
+        assert item["timestamp"] == "2026-10-02T21:52:55.801Z"
+        assert calls[0]["async"] is True
+
+    def test_no_overrides_keeps_claude_code_behaviour(self, monkeypatch, tmp_path):
+        item = _retains(tmp_path, monkeypatch, self.TURN, None, OMP_SETTINGS)[0]["items"][0]
+        assert item["context"] == "claude-code"
+        assert item["tags"] == ["sess-omp", "project:claudecode"]
+        assert "timestamp" not in item
+
+    def test_skip_cadence_retains_when_the_plugins_own_counter_would_not(self, monkeypatch, tmp_path):
+        every_10 = {**OMP_SETTINGS, "retainEveryNTurns": 10}
+        assert _retains(tmp_path, monkeypatch, self.TURN, None, every_10) == []
+        assert len(_retains(tmp_path, monkeypatch, self.TURN, {"skip_cadence": True}, every_10)) == 1
+
+    def test_session_notify_is_stripped_and_a_normal_turn_kept(self, monkeypatch, tmp_path):
+        msgs = [{"role": "user", "content": SESSION_NOTIFY}, *self.TURN]
+        content = _retains(tmp_path, monkeypatch, msgs, self.OVERRIDES, OMP_SETTINGS)[0]["items"][0]["content"]
+        assert "re-read from disk" not in content and "session-notify" not in content
+        assert "decide on sqlite" in content
+
+    def test_every_turn_of_the_unsent_suffix_is_retained(self, monkeypatch, tmp_path):
+        """Three turns land between two retains (cadence 3): none may be marked sent and dropped."""
+        first = self.TURN
+        _retains(tmp_path, monkeypatch, first, self.OVERRIDES, OMP_SETTINGS, session_id="sess-suffix")
+        grown = first + [
+            m for n in (2, 3, 4) for m in ({"role": "user", "content": f"q{n}"}, {"role": "assistant", "content": f"a{n}"})
+        ]
+        calls = _retains(tmp_path, monkeypatch, grown, self.OVERRIDES, OMP_SETTINGS, session_id="sess-suffix")
+        content = calls[0]["items"][0]["content"]
+        assert calls[0]["items"][0]["document_id"] == "sess-suffix-c1"
+        for n in (2, 3, 4):
+            assert f"q{n}" in content and f"a{n}" in content
+        assert "decide on sqlite" not in content  # already sent: not twice

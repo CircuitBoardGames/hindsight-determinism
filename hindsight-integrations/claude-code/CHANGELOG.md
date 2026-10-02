@@ -18,6 +18,13 @@
 
 ### Changed
 
+- `retain.py` can serve a second harness (omp): optional hook_input keys `retain_context` and
+  `retain_tags` replace `retainContext`/`retainTags` for that call, `skip_cadence` lets the caller own
+  the turn cadence, and `source_timestamp` is sent as the memory's `timestamp`. The user's config file
+  is not touched. Plugin version 0.7.5-airoboros.2.
+- Fixed: in full-session mode with `retainEveryNTurns > 1`, only the LAST turn of each unsent suffix was
+  retained; the earlier turns were marked sent and lost.
+
 - Retain (and prior-context recall) now strips harness noise from transcripts, not only memory
   tags: `<system-reminder>`, `<cross-session-message>` peer/cron notices, `<task-notification>`,
   `<session-notify>`, local-command wrappers, and whole turns that are Claude Code internal prompts

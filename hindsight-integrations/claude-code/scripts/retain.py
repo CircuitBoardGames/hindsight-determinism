@@ -71,6 +71,19 @@ def read_transcript(transcript_path: str) -> list:
 
 def run_retain(hook_input: dict, force: bool = False) -> None:
     config = load_config()
+    # A second harness (omp) reuses this script for its retain so the noise filter in lib/content.py
+    # stays the single source of truth. It drives the hook_input, never the user's config file:
+    #   retain_context / retain_tags  replace retainContext / retainTags (its own provenance + tags)
+    #   skip_cadence                  the caller already decided this turn is due (like force=True)
+    #   source_timestamp              ISO time the session began, sent as the memory's event time
+    if isinstance(hook_input.get("retain_context"), str) and hook_input["retain_context"]:
+        config["retainContext"] = hook_input["retain_context"]
+    if isinstance(hook_input.get("retain_tags"), list):
+        config["retainTags"] = [t for t in hook_input["retain_tags"] if isinstance(t, str) and t]
+    force = force or hook_input.get("skip_cadence") is True
+    source_timestamp = hook_input.get("source_timestamp")
+    if not isinstance(source_timestamp, str):
+        source_timestamp = None
 
     if not config.get("autoRetain"):
         debug_log(config, "Auto-retain disabled, exiting")
@@ -130,7 +143,9 @@ def run_retain(hook_input: dict, force: bool = False) -> None:
             debug_log(config, f"No new messages for session {session_id}, skipping retain")
             return
         messages_to_retain = all_messages[retention_progress.start_index :]
-        retain_full_window = retention_progress.start_index == 0
+        # The whole unsent suffix: prepare_retention_transcript otherwise keeps only the LAST turn of
+        # it, so with retainEveryNTurns > 1 every earlier turn in the suffix was marked sent and lost.
+        retain_full_window = True
         if retention_progress.compacted:
             debug_log(
                 config,
@@ -238,6 +253,7 @@ def run_retain(hook_input: dict, force: bool = False) -> None:
             metadata=metadata,
             tags=tags,
             timeout=15,
+            timestamp=source_timestamp,
         )
         if retention_progress is not None:
             commit_retention(session_id, len(all_messages), retention_progress.chunk_index)
