@@ -68,6 +68,12 @@ logger = logging.getLogger(__name__)
 _served_provider: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "hindsight_rerank_served_provider", default=None
 )
+# Whether that member's 0.0 means "discard" (its prunes_candidates). A chain has
+# no verdict of its own: without this, a pruning primary behind a fallback had its
+# cut computed and then ignored.
+_served_prunes: contextvars.ContextVar[bool | None] = contextvars.ContextVar(
+    "hindsight_rerank_served_prunes", default=None
+)
 
 
 class RerankTimeoutError(Exception):
@@ -2160,6 +2166,7 @@ class MultiCrossEncoder(CrossEncoderModel):
             # Record the member for this task before returning. A later read of
             # provider_name follows _active and can name a different request.
             _served_provider.set(member.provider_name)
+            _served_prunes.set(member.prunes_candidates)
             return scores
         # All members failed; surface the last error (loop ran at least once).
         assert last_exc is not None

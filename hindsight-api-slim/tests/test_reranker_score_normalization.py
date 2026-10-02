@@ -256,3 +256,58 @@ async def test_rerank_timeout_keeps_unscored_candidates_in_rrf_order():
     # min_reranker_score threshold excludes them instead of ranking them mid-field.
     assert [r.weight for r in results[2:]] == [0.0, 0.0, 0.0]
     assert [r.cross_encoder_score_normalized for r in results[2:]] == [0.0, 0.0, 0.0]
+
+
+def _chain_member(name: str, scores: list[float] | None, prunes: bool):
+    """A failover-chain member; ``scores=None`` makes it fail so the next one serves."""
+    from hindsight_api.engine.cross_encoder import CrossEncoderModel
+
+    class _Member(CrossEncoderModel):
+        prunes_candidates = prunes
+
+        @property
+        def provider_name(self) -> str:
+            return name
+
+        async def initialize(self) -> None:
+            pass
+
+        async def _predict(self, pairs: list[tuple[str, str]]) -> list[float]:
+            if scores is None:
+                raise RuntimeError("member down")
+            return scores
+
+    return _Member()
+
+
+@pytest.mark.asyncio
+async def test_a_failover_chain_prunes_when_its_pruning_member_serves():
+    """TypeSafe with an rrf fallback is a chain; the chain must not hide its primary's cut."""
+    from hindsight_api.engine.cross_encoder import MultiCrossEncoder, RRFPassthroughCrossEncoder
+
+    chain = MultiCrossEncoder([_chain_member("typesafe", [0.5, 0.0, 0.2], prunes=True), RRFPassthroughCrossEncoder()])
+    results = (await CrossEncoderReranker(cross_encoder=chain).rerank("q", _make_candidates(3))).results
+    assert [r.weight for r in results] == [0.5, 0.2]
+
+
+@pytest.mark.asyncio
+async def test_a_failover_chain_keeps_zeros_from_a_member_that_does_not_prune():
+    """Pruning follows the member that served, not whether any member in the chain prunes."""
+    from hindsight_api.engine.cross_encoder import MultiCrossEncoder
+
+    chain = MultiCrossEncoder(
+        [_chain_member("local", [0.5, 0.0, 0.2], prunes=False), _chain_member("typesafe", [1.0, 0.0, 0.0], prunes=True)]
+    )
+    results = (await CrossEncoderReranker(cross_encoder=chain).rerank("q", _make_candidates(3))).results
+    assert len(results) == 3
+
+
+@pytest.mark.asyncio
+async def test_a_failover_chain_prunes_after_failing_over_to_a_pruning_member():
+    from hindsight_api.engine.cross_encoder import MultiCrossEncoder
+
+    chain = MultiCrossEncoder(
+        [_chain_member("tei", None, prunes=False), _chain_member("typesafe", [0.5, 0.0, 0.2], prunes=True)]
+    )
+    results = (await CrossEncoderReranker(cross_encoder=chain).rerank("q", _make_candidates(3))).results
+    assert [r.weight for r in results] == [0.5, 0.2]
