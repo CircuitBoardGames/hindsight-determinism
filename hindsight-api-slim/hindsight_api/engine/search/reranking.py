@@ -8,7 +8,7 @@ import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from ..cross_encoder import RerankTimeoutError, _served_provider
+from ..cross_encoder import RerankTimeoutError, _served_provider, _served_prunes
 from .decision_reranker import PROVIDER_NAME as DECISION_MODEL_RERANKER
 from .decision_reranker import DecisionModelReranker, rerank_shared_context
 from .types import MergedCandidate, ScoredResult
@@ -437,6 +437,7 @@ class CrossEncoderReranker:
         unscored: set[int] = set()
         token = _served_provider.set(None)
         shared_context_token = rerank_shared_context.set(shared_context)
+        prunes_token = _served_prunes.set(None)
         try:
             try:
                 # The model takes 2-tuples; `pairs` is built as two-element lists.
@@ -446,9 +447,11 @@ class CrossEncoderReranker:
                 unscored = {i for i, score in enumerate(exc.scores) if score is None}
                 scores = [0.0 if score is None else score for score in exc.scores]
             served_provider = _served_provider.get()
+            served_prunes = _served_prunes.get()
         finally:
             rerank_shared_context.reset(shared_context_token)
             _served_provider.reset(token)
+            _served_prunes.reset(prunes_token)
         if served_provider is None:
             # Single-member encoders do not record one. Their provider_name is
             # fixed for the instance, so it is not the shared failover cursor.
@@ -508,7 +511,9 @@ class CrossEncoderReranker:
         # `candidates` arrives in RRF order, so appending preserves it for the tail.
         scored_results.extend(unscored_results)
 
-        if not self.cross_encoder.prunes_candidates:
+        if served_prunes is None:
+            served_prunes = self.cross_encoder.prunes_candidates
+        if not served_prunes:
             return RerankResult(results=scored_results, provider_name=served_provider)
 
         # This backend judges relevance rather than only ordering it, and marks a
