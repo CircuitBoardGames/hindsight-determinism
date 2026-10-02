@@ -35,17 +35,57 @@ def strip_channel_envelope(content: str) -> str:
     return content
 
 
+# Harness-injected envelopes that are not conversation: whole block removed.
+# Port (idea + tag list) of sanitizeText / extractUserQueryText from
+# TencentDB-Agent-Memory (MIT), MemoryCore/src/utils/sanitize.ts and
+# MemoryProxy/src/common/user-query-extractor.ts, extended with the envelopes
+# this box's Claude Code actually writes into user turns.
+_NOISE_TAGS = (
+    "hindsight_memories",
+    "relevant_memories",
+    "system-reminder",
+    "task-notification",
+    "session-notify",
+    "local-command-stdout",
+    "local-command-stderr",
+    "local-command-caveat",
+    "command-name",
+    "command-message",
+)
+_NOISE_BLOCKS = re.compile(
+    "|".join(rf"<{t}\b[^>]*>[\s\S]*?</{t}>" for t in _NOISE_TAGS)
+    # Peer / cron notice: "Another Claude session sent a message:" header, the
+    # envelope, and the "This came from another Claude session ..." trailer.
+    + r"|(?:Another Claude session sent a message:\s*)?<cross-session-message\b[^>]*>[\s\S]*?</cross-session-message>"
+    r"(?:\s*This came from another Claude session[^\n]*)?"
+)
+# A user turn that is entirely a Claude Code internal prompt (anchored at the start).
+_INTERNAL_PROMPT = re.compile(
+    r"\s*(?:\[(?:SUGGESTION|TITLE|SUMMARY|COMPACT|RECAP)\s+MODE\b"
+    r"|The user stepped away and is coming back\.\s*Recap"
+    r"|Base directory for this skill:"  # a skill body expanded into the user role
+    r"|\[Request interrupted by user)",
+    re.IGNORECASE,
+)
+# /cmd args are what the operator typed: unwrap, do not drop.
+_COMMAND_ARGS = re.compile(r"<command-args>([\s\S]*?)</command-args>")
+
+
 def strip_memory_tags(content: str) -> str:
-    """Remove <hindsight_memories> and <relevant_memories> blocks.
+    """Remove harness-injected blocks that are not conversation.
 
-    Prevents retain feedback loop — these were injected during recall and
-    should not be re-stored.
+    Memory blocks (<hindsight_memories>, <relevant_memories>) are anti-feedback-loop:
+    injected during recall, they must not be re-stored. The rest (system-reminder,
+    cross-session-message, task-notification, local-command wrappers, Claude Code
+    internal-mode prompts) is machine text that Hindsight otherwise stores as
+    facts — e.g. a cron boilerplate notice paraphrased into 5-10 memories.
 
-    Port of: stripMemoryTags() in index.js
+    Port of: stripMemoryTags() in index.js; noise list after TencentDB-Agent-Memory.
     """
-    content = re.sub(r"<hindsight_memories>[\s\S]*?</hindsight_memories>", "", content)
-    content = re.sub(r"<relevant_memories>[\s\S]*?</relevant_memories>", "", content)
-    return content
+    if _INTERNAL_PROMPT.match(content):
+        return ""
+    content = _COMMAND_ARGS.sub(r"\1", content)
+    return _NOISE_BLOCKS.sub("", content)
 
 
 # ---------------------------------------------------------------------------

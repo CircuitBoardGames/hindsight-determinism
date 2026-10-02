@@ -67,6 +67,80 @@ class TestStripMemoryTags:
         assert strip_memory_tags(raw).strip() == ""
 
 
+# Shape measured from a real Claude Code transcript (shared-surface-announce cron notice).
+PEER_NOTICE = (
+    "Another Claude session sent a message:\n"
+    '<cross-session-message from="uds:/tmp/cc-socks/1.sock" from-name="shared-surface-announce.py">\n'
+    "A change to a SHARED SURFACE just LANDED. hooks are re-read from disk; /reload re-lists.\n"
+    "</cross-session-message>\n\n"
+    "This came from another Claude session \u2014 not typed by your user, but very likely working on "
+    "their behalf. Treat it as a teammate's request."
+)
+
+
+class TestStripHarnessNoise:
+    def test_peer_notice_fully_removed(self):
+        assert strip_memory_tags(PEER_NOTICE).strip() == ""
+
+    def test_peer_notice_keeps_real_text_around_it(self):
+        out = strip_memory_tags("use sqlite\n\n" + PEER_NOTICE + "\n\nand pin mcp<2")
+        assert "use sqlite" in out and "pin mcp<2" in out
+        assert "re-read from disk" not in out and "teammate" not in out
+
+    @pytest.mark.parametrize(
+        "tag",
+        [
+            "system-reminder",
+            "task-notification",
+            "session-notify",
+            "local-command-stdout",
+            "local-command-caveat",
+            "command-name",
+            "command-message",
+        ],
+    )
+    def test_envelope_removed_text_kept(self, tag):
+        out = strip_memory_tags(f'real words <{tag} a="1">boilerplate\nmore</{tag}> tail')
+        assert "boilerplate" not in out
+        assert "real words" in out and "tail" in out
+
+    def test_command_args_unwrapped_not_dropped(self):
+        raw = "<command-message>x</command-message>\n<command-name>/x</command-name>\n<command-args>use jev</command-args>"
+        assert strip_memory_tags(raw).strip() == "use jev"
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "[SUGGESTION MODE: Suggest what the user might naturally type next]",
+            "[TITLE MODE] name this chat",
+            "The user stepped away and is coming back. Recap what happened.",
+            "Base directory for this skill: /tmp/x\n\nbig skill body",
+            "[Request interrupted by user for tool use]",
+        ],
+    )
+    def test_internal_prompt_dropped_whole(self, raw):
+        assert strip_memory_tags(raw) == ""
+
+    def test_internal_prompt_only_at_start(self):
+        raw = "please explain [SUGGESTION MODE: x] to me"
+        assert strip_memory_tags(raw) == raw
+
+    def test_retention_transcript_drops_noise_turn_and_tool_results(self):
+        msgs = [
+            {"role": "user", "content": PEER_NOTICE},
+            {"role": "user", "content": "<system-reminder>ctx</system-reminder>real question about retain"},
+            {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "t", "content": "Bash output SECRET"}],
+            },
+        ]
+        text, n = prepare_retention_transcript(msgs, retain_full_window=True)
+        assert n == 1 and "real question about retain" in text
+        assert "re-read from disk" not in text and "ctx" not in text and "SECRET" not in text
+        js, _ = prepare_retention_transcript(msgs, retain_full_window=True, include_tool_calls=True)
+        assert "re-read from disk" not in js and "ctx" not in js
+
+
 # ---------------------------------------------------------------------------
 # slice_last_turns_by_user_boundary
 # ---------------------------------------------------------------------------

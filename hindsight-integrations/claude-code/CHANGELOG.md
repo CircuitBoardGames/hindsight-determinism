@@ -18,6 +18,12 @@
 
 ### Changed
 
+- Retain (and prior-context recall) now strips harness noise from transcripts, not only memory
+  tags: `<system-reminder>`, `<cross-session-message>` peer/cron notices, `<task-notification>`,
+  `<session-notify>`, local-command wrappers, and whole turns that are Claude Code internal prompts
+  (`[SUGGESTION MODE]`, recap, skill-body expansion). Tool results were already excluded unless
+  `retainToolCalls` is on. Port of TencentDB-Agent-Memory's sanitizer (MIT).
+
 - Tags that resolve to an empty namespace content (e.g. `"user:"` when
   `HINDSIGHT_USER_ID` is unset) are now dropped from retain requests. Previously
   such tags were sent as-is. Tags without `:` are unaffected.
