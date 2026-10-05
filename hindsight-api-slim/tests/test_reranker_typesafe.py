@@ -739,3 +739,45 @@ class TestOverflowingJevsWindow:
         with pytest.raises(UpstreamHTTPError, match="max_tokens_exceeded"):
             await encoder._predict([("q", "a"), ("q", "b")])
         assert len(session.refused) == 4, "26k, 13k, 6.5k, 3.25k — then it gives up"
+
+
+class _CannedSession(_FakeSession):
+    """Replies to every request with `payload`, whatever was asked."""
+
+    def __init__(self, payload: dict):
+        super().__init__({})
+        self.payload = payload
+
+    @asynccontextmanager
+    async def _post(self, url, headers=None, json=None):
+        yield _FakeResponse(self.payload)
+
+
+class TestUsageLog:
+    @pytest.mark.asyncio
+    async def test_each_reply_logs_its_usage(self, caplog):
+        encoder, _ = _encoder({})
+        usage = {"input_tokens": 13975, "output_tokens": 2339, "cost": 0.00058695}
+        encoder._session = _CannedSession({"id": "gen-abc", "answers": {}, "usage": usage})
+        body = {"questions": {"rank": {}}}
+
+        with caplog.at_level("INFO", logger="hindsight_api.engine.cross_encoder"):
+            result = await encoder._ask(body, "decision_rank")
+
+        assert result["id"] == "gen-abc"
+        line = next(r.getMessage() for r in caplog.records if "[JEV USAGE]" in r.getMessage())
+        for field in ("kind=rank", "input_tokens=13975", "output_tokens=2339", "cost=0.00058695", "id=gen-abc"):
+            assert field in line
+
+    @pytest.mark.asyncio
+    async def test_a_reply_without_usage_still_returns_its_answers(self, caplog):
+        encoder, _ = _encoder({})
+        reply = {"answers": {"depth": {"type": "score", "score": 1.0}}}
+        encoder._session = _CannedSession(reply)
+
+        with caplog.at_level("INFO", logger="hindsight_api.engine.cross_encoder"):
+            result = await encoder._ask({"questions": {"depth": {}}}, "decision_cut")
+
+        assert result == reply
+        line = next(r.getMessage() for r in caplog.records if "[JEV USAGE]" in r.getMessage())
+        assert "kind=depth" in line and "input_tokens=None" in line
