@@ -1082,7 +1082,25 @@ class TypeSafeCrossEncoder(CrossEncoderModel):
                 json=body,
             ) as response:
                 await raise_for_status(response)
-                return await response.json(content_type=None)
+                result = await response.json(content_type=None)
+        self._log_usage(body, result)
+        return result
+
+    @staticmethod
+    def _log_usage(body: dict, result: dict) -> None:
+        # One greppable line per Jev reply, so the journal shows what this caller spends (each
+        # reply carries its own token counts and USD cost). Logging must never break recall.
+        try:
+            from .memory_engine import get_current_bank_id
+
+            usage = result.get("usage") or {}
+            logger.info(
+                f"[JEV USAGE] kind={next(iter(body['questions']))} "
+                f"input_tokens={usage.get('input_tokens')} output_tokens={usage.get('output_tokens')} "
+                f"cost={usage.get('cost')} id={result.get('id')} bank={get_current_bank_id()}"
+            )
+        except Exception:
+            logger.debug("[JEV USAGE] could not log reply usage", exc_info=True)
 
     async def _rank_once(self, query: str, docs: list[str], indices: list[int]) -> list[int]:
         """Rank one group of candidates, returning their indices best first."""
