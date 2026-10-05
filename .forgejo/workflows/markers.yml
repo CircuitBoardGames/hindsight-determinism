@@ -1,0 +1,20 @@
+# Refuses a PR that leaves merge-conflict markers behind. On 2026-10-05 two upstream syncs landed
+# eight files with markers while their gates were green, because nothing looked for them. This is a
+# workflow of its own, with no `paths:` filter, so it runs on every PR whatever the other gates
+# skip; branch protection requires `Markers /*`. A bare `=======` is not matched: Markdown uses it
+# as a heading underline. A git grep error fails the step too, so a broken check cannot pass.
+name: Markers
+on:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  conflict-markers:
+    name: no conflict markers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No conflict markers
+        run: |
+          rc=0; git grep -nE '^(<<<<<<<|>>>>>>>)( |$)' || rc=$?
+          [ "$rc" -eq 1 ] || { echo "conflict markers above, or git grep failed (rc=$rc)"; exit 1; }
+          echo "no conflict markers in $(git ls-files | wc -l) tracked files"
