@@ -4,7 +4,9 @@ No database and no real LLM: the engine, the store and the judge are fakes, so e
 one behaviour of the dedup module itself.
 """
 
+import asyncio
 import json
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -223,6 +225,103 @@ async def test_candidates_come_from_the_whole_bank_not_the_session():
         got = await dedup.find_candidates(eng, "bank", new, min_similarity=0.85)
     assert [c.id for c in got["n-a"]] == ["old-port"]  # cross-session twin kept; far and self dropped
     assert store.calls[0]["fact_types"] == ["world", "experience"]
+
+
+# ---------------------------------------------------------------- concurrency
+#
+# Measured 2026-10-06 on the omp bank: dedup was 49% of retain wall time (median 17 s), spent in two
+# serial loops -- one recall per new fact (~0.19 s each) and one judge call per 30 facts (~10 s
+# each). Both loops' inputs are fixed before either runs, so they can overlap; applying stays serial.
+
+
+class _InFlight:
+    """Counts how many awaits of one kind overlap."""
+
+    def __init__(self):
+        self.now = 0
+        self.peak = 0
+
+    async def hold(self):
+        self.now += 1
+        self.peak = max(self.peak, self.now)
+        await asyncio.sleep(0.01)
+        self.now -= 1
+
+
+class OverlapStore:
+    """recall_unified that answers each fact with its own twin, and records the overlap."""
+
+    def __init__(self):
+        self.flight = _InFlight()
+
+    async def recall_unified(self, *, query_text, **kw):
+        await self.flight.hold()
+        twin = SimpleNamespace(
+            id="old-" + query_text,
+            text=query_text,
+            fact_type="world",
+            similarity=0.95,
+            occurred_start=None,
+            occurred_end=None,
+            mentioned_at=None,
+        )
+        return {"world": SimpleNamespace(semantic=[twin]), "experience": SimpleNamespace(semantic=[])}
+
+
+@pytest.mark.asyncio
+async def test_candidate_searches_overlap_and_stay_bounded():
+    store = OverlapStore()
+    eng = SimpleNamespace(_get_backend=AsyncMock(return_value="pool"), embeddings=None)
+    new = [Fact(f"n{i}", f"fact {i}", "world") for i in range(3 * dedup.SEARCH_CONCURRENCY)]
+    with (
+        patch("hindsight_api.engine.memories.get_memories", return_value=store),
+        patch(
+            "hindsight_api.engine.retain.embedding_utils.generate_embeddings_batch",
+            AsyncMock(return_value=[[0.1]] * len(new)),
+        ),
+    ):
+        got = await dedup.find_candidates(eng, "bank", new, min_similarity=0.85)
+    assert store.flight.peak > 1, "candidate searches ran one at a time"
+    assert store.flight.peak <= dedup.SEARCH_CONCURRENCY, "searches outran the bound on pool connections"
+    # each fact keeps its OWN candidates: no cross-wiring between overlapping searches
+    assert {fid: [c.id for c in cs] for fid, cs in got.items()} == {f.id: ["old-" + f.text] for f in new}
+
+
+@pytest.mark.asyncio
+async def test_judge_calls_overlap_and_decisions_apply_in_fact_order():
+    new = [Fact(f"n{i:03}", f"fact {i}", "world") for i in range(2 * dedup.MAX_FACTS_PER_CALL + 5)]
+    cands = {f.id: [Fact("old-" + f.id, "twin", "world")] for f in new}
+    flight = _InFlight()
+
+    async def fake_judge(llm, part, candidates):
+        await flight.hold()
+        return {f.id: Decision("skip", ["old-" + f.id]) for f in part}
+
+    applied = []
+
+    async def fake_apply(engine, bank_id, part, candidates, decisions, rc):
+        applied.extend(f.id for f in part)
+        assert all(decisions[f.id].action == "skip" for f in part)
+        return {**dict.fromkeys(dedup.ACTIONS, 0), "skip": len(part)}
+
+    @asynccontextmanager
+    async def fake_acquire(backend):
+        yield None
+
+    stored = [SimpleNamespace(unit_id=f.id, text=f.text, fact_type="world") for f in new]
+    memories = SimpleNamespace(get_memories=AsyncMock(return_value=stored))
+    eng = SimpleNamespace(_get_backend=AsyncMock(return_value="pool"))
+    with (
+        patch("hindsight_api.engine.memories.get_memories", return_value=memories),
+        patch("hindsight_api.engine.db_utils.acquire_with_retry", fake_acquire),
+        patch.object(dedup, "find_candidates", AsyncMock(return_value=cands)),
+        patch.object(dedup, "judge", fake_judge),
+        patch.object(dedup, "apply_decisions", fake_apply),
+    ):
+        counts = await dedup.dedup_retained(eng, "bank", [f.id for f in new], None, 0.85, "rc")
+    assert flight.peak == 3, "the three judge slices did not run side by side (peak %d)" % flight.peak
+    assert applied == [f.id for f in new], "decisions were not applied in fact order"
+    assert counts["skip"] == len(new)
 
 
 # ---------------------------------------------------------------- setting
