@@ -234,11 +234,11 @@ async def test_entity_resolution_case(case: Case, strategy: str, pg0_db_url):
     try:
         async with backend.acquire() as conn:
             # The pool MemoryEngine builds applies this to every connection; a backend created
-            # directly would otherwise probe at the Postgres default of 0.3 and admit far
-            # fewer candidates than production does.
+            # directly would otherwise probe at the Postgres default and drift from production
+            # whenever either threshold is configured.
             await conn.execute(
                 "SELECT set_config('pg_trgm.similarity_threshold', $1, false)",
-                str(config.entity_trgm_similarity_threshold),
+                str(config.entity_trgm_probe_threshold),
             )
             await _seed(conn, bank_id, case.existing)
             await _seed(conn, other_bank_id, case.other_bank)

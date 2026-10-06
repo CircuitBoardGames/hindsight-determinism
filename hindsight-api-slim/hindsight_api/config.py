@@ -1843,6 +1843,7 @@ DEFAULT_DB_SESSION_SETUP_ON_ACQUIRE = True
 # pg_trgm.similarity_threshold). Governs how close a name must be for the `%`
 # operator to treat it as a candidate during entity resolution: lower catches
 # more substring-ish matches at higher CPU cost, higher is stricter and cheaper.
+# The pool applies max(this, ENTITY_MERGE_MIN_SIMILARITY): see entity_trgm_probe_threshold.
 DEFAULT_ENTITY_TRGM_SIMILARITY_THRESHOLD = 0.15
 # pg_trgm similarity at/above which two brand-new names created by the SAME retain are merged
 # into one entity (in-batch dedup — surface-form variants that would otherwise each create a
@@ -3814,6 +3815,17 @@ class HindsightConfig:
     def retain_attachment_max_size_bytes(self) -> int:
         """Maximum decoded size of a single inline retain image, in bytes."""
         return self.retain_attachment_max_size_mb * 1024 * 1024
+
+    @property
+    def entity_trgm_probe_threshold(self) -> float:
+        """The ``pg_trgm.similarity_threshold`` the pool sets: the probe threshold, raised to the merge floor.
+
+        The resolver drops every candidate under ``entity_merge_min_similarity`` before scoring, so
+        probing below it only fetches rows to discard. Measured on the live airoboros bank (8.5k
+        entities, 19 replayed retain batches): 0.15 returned 3.8x the rows of 0.3 and took 3.5x as
+        long, and every batch resolved to the same survivors and co-occurrence names.
+        """
+        return max(self.entity_trgm_similarity_threshold, self.entity_merge_min_similarity)
 
     def reranker_chain(self) -> list[RerankerMemberConfig]:
         """The reranker failover chain: the primary (index 0) plus indexed members.
