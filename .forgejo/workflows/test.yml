@@ -44,10 +44,17 @@ jobs:
       with:
         ref: ${{ github.event.pull_request.head.sha || '' }}
 
+    # enable-cache stays OFF. On this host-mode runner every matrix leg shares one uv cache
+    # (/var/lib/forgejo-runner/.cache/uv), and enable-cache's post-step runs
+    # `uv cache prune --ci --force` -- --force skips uv's cache lock, so a leg that finishes
+    # first deletes the extraction temp dir of a leg still installing. Measured on PR #13:
+    # the 3.11 leg pruned at 18:17:29.50 and the 3.12 leg failed 0.1 s later with "Failed to
+    # extract archive ... aiohttp ... No such file or directory". It bought nothing here
+    # either: the GitHub Actions cache restore it pairs with missed on every leg.
     - name: Install uv
       uses: astral-sh/setup-uv@v7
       with:
-        enable-cache: true
+        enable-cache: false
 
     - name: Build hindsight-api
       working-directory: ./hindsight-api-slim
