@@ -29,6 +29,7 @@ dedup were off. Only a target the model was actually shown for that fact can be 
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from dataclasses import dataclass, field
@@ -47,6 +48,10 @@ TOP_K = 5
 # ponytail: a huge document retain is judged in slices of this many facts (one call each)
 # rather than one prompt that outgrows the model; raise it if calls per retain matter more.
 MAX_FACTS_PER_CALL = 30
+# ponytail: candidate searches in flight at once, each holding a pool connection for one recall. A
+# retain's own pipeline shares the pool (100 by default), so this stays small; raise it if dedup's
+# search phase still shows in [retain-timing] and the pool has headroom.
+SEARCH_CONCURRENCY = 8
 
 SYSTEM_PROMPT = """You deduplicate a long-term memory bank. Each NEW fact was just extracted. Compare it with the EXISTING facts listed as its candidates and choose exactly one action:
 
@@ -183,25 +188,29 @@ async def find_candidates(
     pool = await engine._get_backend()
     batch_ids = {f.id for f in new_facts}
     embs = await embedding_utils.generate_embeddings_batch(engine.embeddings, [f.text for f in new_facts])
-    out: dict[str, list[Fact]] = {}
-    for f, emb in zip(new_facts, embs, strict=True):
-        arms = await store.recall_unified(
-            conn=pool,
-            bank_id=bank_id,
-            fact_types=list(DEDUP_FACT_TYPES),
-            query_embedding=str(emb),
-            query_text=f.text,
-            limit=TOP_K + len(batch_ids),
-            tags=None,  # the whole bank: cross-session duplicates are the point
-            enable_text_search=False,
-            enable_graph=False,
-        )
+    gate = asyncio.Semaphore(SEARCH_CONCURRENCY)
+
+    async def search(f: Fact, emb: Any) -> list[Fact]:
+        async with gate:
+            arms = await store.recall_unified(
+                conn=pool,
+                bank_id=bank_id,
+                fact_types=list(DEDUP_FACT_TYPES),
+                query_embedding=str(emb),
+                query_text=f.text,
+                limit=TOP_K + len(batch_ids),
+                tags=None,  # the whole bank: cross-session duplicates are the point
+                enable_text_search=False,
+                enable_graph=False,
+            )
         hits = [r for a in arms.values() for r in a.semantic]
         hits = [r for r in hits if str(r.id) not in batch_ids and (r.similarity or 0.0) >= min_similarity]
         hits.sort(key=lambda r: -(r.similarity or 0.0))
-        if hits:
-            out[f.id] = [to_fact(r) for r in hits[:TOP_K]]
-    return out
+        return [to_fact(r) for r in hits[:TOP_K]]
+
+    # Independent reads, so they overlap: one at a time was ~0.19 s per fact on the omp bank.
+    found = await asyncio.gather(*(search(f, emb) for f, emb in zip(new_facts, embs, strict=True)))
+    return {f.id: hits for f, hits in zip(new_facts, found, strict=True) if hits}
 
 
 async def judge(llm_config: Any, new_facts: list[Fact], candidates: dict[str, list[Fact]]) -> dict[str, Decision]:
@@ -308,9 +317,12 @@ async def dedup_retained(
         candidates = await find_candidates(engine, bank_id, new_facts, min_similarity)
         judged = [f for f in new_facts if f.id in candidates]
         counts["store"] = len(new_facts) - len(judged)
-        for i in range(0, len(judged), MAX_FACTS_PER_CALL):
-            part = judged[i : i + MAX_FACTS_PER_CALL]
-            decisions = await judge(llm_config, part, candidates)
+        parts = [judged[i : i + MAX_FACTS_PER_CALL] for i in range(0, len(judged), MAX_FACTS_PER_CALL)]
+        # Every slice's inputs (its facts and their candidates) are fixed before any judging, so the
+        # calls run side by side. Applying stays in fact order: a later decision may name a target an
+        # earlier one already retired.
+        verdicts = await asyncio.gather(*(judge(llm_config, part, candidates) for part in parts))
+        for part, decisions in zip(parts, verdicts, strict=True):
             for action, n in (
                 await apply_decisions(engine, bank_id, part, candidates, decisions, request_context)
             ).items():
