@@ -6,7 +6,6 @@
 name: Markers
 on:
   pull_request:
-  workflow_dispatch:
 jobs:
   conflict-markers:
     name: no conflict markers
