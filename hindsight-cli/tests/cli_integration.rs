@@ -95,7 +95,7 @@ fn test_health_check_json_output() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         // Should be valid JSON
         let result: serde_json::Value = serde_json::from_str(&stdout)
-            .expect(&format!("Expected valid JSON output, got: {}", stdout));
+            .unwrap_or_else(|e| panic!("Expected valid JSON output, got: {}: {e:?}", stdout));
 
         // Should have status field
         assert!(
@@ -133,7 +133,7 @@ fn test_bank_list_json_output() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         // Should be valid JSON array
         let _result: serde_json::Value = serde_json::from_str(&stdout)
-            .expect(&format!("Expected valid JSON output, got: {}", stdout));
+            .unwrap_or_else(|e| panic!("Expected valid JSON output, got: {}: {e:?}", stdout));
     }
 }
 
@@ -153,9 +153,6 @@ fn test_bank_create_and_delete() {
         "--mission",
         "A test bank for CLI integration tests",
     ]);
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
 
     // Bank might already exist, which is OK
     let created = output.status.success();
@@ -1085,7 +1082,7 @@ fn test_version_json() {
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let result: serde_json::Value = serde_json::from_str(&stdout)
-            .expect(&format!("Expected valid JSON output, got: {}", stdout));
+            .unwrap_or_else(|e| panic!("Expected valid JSON output, got: {}: {e:?}", stdout));
 
         // Should have api_version and features
         assert!(

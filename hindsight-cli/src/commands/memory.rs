@@ -106,6 +106,7 @@ fn parse_tags_match(tags_match: &Option<String>) -> TagsMatch {
 }
 
 /// List memory units with pagination and optional filters
+#[allow(clippy::too_many_arguments)] // one parameter per CLI flag or query param; bundling them is a refactor, not a lint fix
 pub fn list(
     client: &ApiClient,
     bank_id: &str,

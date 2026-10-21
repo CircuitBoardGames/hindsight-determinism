@@ -276,6 +276,7 @@ pub fn mission(
 }
 
 /// Create a new bank
+#[allow(clippy::too_many_arguments)] // one parameter per CLI flag or query param; bundling them is a refactor, not a lint fix
 pub fn create(
     client: &ApiClient,
     bank_id: &str,
@@ -336,6 +337,7 @@ pub fn create(
 }
 
 /// Update bank properties (partial update)
+#[allow(clippy::too_many_arguments)] // one parameter per CLI flag or query param; bundling them is a refactor, not a lint fix
 pub fn update(
     client: &ApiClient,
     bank_id: &str,
@@ -678,9 +680,8 @@ pub fn consolidate(
                 println!("  {} {}", ui::dim("Operation ID:"), operation_id);
                 if result.deduplicated {
                     println!(
-                        "  {} {}",
-                        ui::dim("Note:"),
-                        "Reusing existing pending consolidation task"
+                        "  {} Reusing existing pending consolidation task",
+                        ui::dim("Note:")
                     );
                 }
             } else {
@@ -879,6 +880,7 @@ pub fn config(
     }
 }
 
+#[allow(clippy::too_many_arguments)] // one parameter per CLI flag or query param; bundling them is a refactor, not a lint fix
 pub fn set_config(
     client: &ApiClient,
     bank_id: &str,

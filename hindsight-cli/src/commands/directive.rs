@@ -281,6 +281,6 @@ fn print_directive_detail(directive: &types::DirectiveResponse) {
     println!();
     println!("{}", ui::gradient_text("─── Content ───"));
     println!();
-    println!("{}", &directive.content);
+    println!("{}", directive.content);
     println!();
 }

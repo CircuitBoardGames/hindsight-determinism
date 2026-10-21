@@ -167,7 +167,7 @@ pub fn run_sync(config: &MountConfig) -> Result<SyncResult> {
         .iter()
         .filter(|d| !live_dirs.contains(*d))
         .collect();
-    gone_dirs.sort_by(|a, b| b.len().cmp(&a.len()));
+    gone_dirs.sort_by_key(|d| std::cmp::Reverse(d.len()));
     for dir in gone_dirs {
         let _ = fs::remove_dir(config.dir.join(dir)); // only succeeds if empty
     }

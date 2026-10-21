@@ -29,10 +29,12 @@ const BRAND_MID: Color = Color::Rgb(0, 131, 183); // Midpoint
 #[derive(Debug, Clone, PartialEq)]
 enum View {
     Banks,
-    Memories(String),  // bank_id
-    Entities(String),  // bank_id
+    Memories(String), // bank_id
+    #[allow(dead_code)] // no key opens this view yet; its loader and renderer are kept
+    Entities(String), // bank_id
+    #[allow(dead_code)] // no key opens this view yet; its loader and renderer are kept
     Documents(String), // bank_id
-    Query(String),     // bank_id - combines recall and reflect
+    Query(String),    // bank_id - combines recall and reflect
 }
 
 impl View {
@@ -315,7 +317,7 @@ impl App {
             let bank_id = bank_id.clone();
             let query_mode = self.query_mode.clone();
             let query_text = self.query_text.clone();
-            let query_budget = self.query_budget.clone();
+            let query_budget = self.query_budget;
             let query_max_tokens = self.query_max_tokens;
 
             // Spawn background thread
@@ -854,7 +856,7 @@ fn render_control_bar(f: &mut Frame, app: &App, area: Rect) {
     // Right: Shortcuts in columns if many
     // Calculate shortcuts per column (max 3 lines of shortcuts)
     let max_shortcuts_per_col = 3;
-    let num_cols = (shortcuts.len() + max_shortcuts_per_col - 1) / max_shortcuts_per_col;
+    let num_cols = shortcuts.len().div_ceil(max_shortcuts_per_col);
 
     let mut shortcut_lines = vec![];
     for row in 0..max_shortcuts_per_col {

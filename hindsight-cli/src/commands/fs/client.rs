@@ -5,6 +5,7 @@
 //! Two endpoints, fetched once per sync:
 //!  - GET /knowledge-base/tree   → the folder/page hierarchy (no page bodies)
 //!  - GET /knowledge-base/export → every page's markdown in one bundle
+//!
 //! We join them by page id, so a bank of any size is two HTTP calls.
 
 use anyhow::{anyhow, Result};

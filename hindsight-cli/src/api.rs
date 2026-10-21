@@ -7,7 +7,6 @@ use anyhow::Result;
 pub use hindsight_client::types;
 use hindsight_client::{Client as AsyncClient, Error as ClientError};
 use serde::{Deserialize, Serialize};
-use serde_json;
 use std::collections::HashMap;
 
 const DEFAULT_CLI_USER_AGENT: &str = concat!("hindsight-cli/", env!("CARGO_PKG_VERSION"));
@@ -120,12 +119,6 @@ pub struct Operation {
 pub struct OperationsResponse {
     pub bank_id: String,
     pub operations: Vec<Operation>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct TraceInfo {
-    pub total_time: Option<f64>,
-    pub activation_count: Option<i32>,
 }
 
 // Unified result for put_memories that handles both sync and async responses
@@ -1524,6 +1517,7 @@ impl ApiClient {
 
     // --- Audit Log Methods ---
 
+    #[allow(clippy::too_many_arguments)] // one parameter per CLI flag or query param; bundling them is a refactor, not a lint fix
     pub fn list_audit_logs(
         &self,
         bank_id: &str,

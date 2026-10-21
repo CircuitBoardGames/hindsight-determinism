@@ -5,6 +5,7 @@ use anyhow::Result;
 use chrono::{Duration as ChronoDuration, NaiveDate, Utc};
 use std::collections::BTreeMap;
 
+#[allow(clippy::too_many_arguments)] // one parameter per CLI flag or query param; bundling them is a refactor, not a lint fix
 pub fn list(
     client: &ApiClient,
     agent_id: &str,
