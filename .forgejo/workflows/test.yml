@@ -85,8 +85,9 @@ jobs:
       CARGO_TERM_COLOR: always
       RUSTUP_TOOLCHAIN: '1.98.1'
     # A draft waits off the runner: the queue un-drafts it at the front, and that edit runs this.
-    # A machine-held or red draft is not waiting but being fixed (the hold or the red drafts it), so its pushes run here.
-    if: ${{ !github.event.pull_request.draft || contains(github.event.pull_request.labels.*.name, 'queue:not-admitted') || contains(github.event.pull_request.labels.*.name, 'queue:machine-hold') || contains(github.event.pull_request.labels.*.name, 'queue:red') }}
+    # A red or machine-held draft waits too: its fix is gated when the queue un-drafts it at the front.
+    # queue:not-admitted runs only the Admission step, so a held PR never reads green.
+    if: ${{ !github.event.pull_request.draft || contains(github.event.pull_request.labels.*.name, 'queue:not-admitted') }}
     steps:
       - name: Admission — a held PR must report not-passing, never green
         if: ${{ contains(github.event.pull_request.labels.*.name, 'queue:not-admitted') }}
