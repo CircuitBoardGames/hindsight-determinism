@@ -69,7 +69,6 @@ mod tests {
     fn test_client_creation() {
         let _client = Client::new("http://localhost:8888");
         // Just verify we can create a client
-        assert!(true);
     }
 
     #[tokio::test]
@@ -89,7 +88,7 @@ mod tests {
 
         // 1. Create a bank
         let create_request = types::CreateBankRequest {
-            name: Some(format!("Rust Test Bank")),
+            name: Some("Rust Test Bank".to_string()),
             ..Default::default()
         };
         let create_response = client

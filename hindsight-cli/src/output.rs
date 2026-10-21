@@ -120,6 +120,7 @@ mod tests {
     #[test]
     fn test_output_format_clone() {
         let format = OutputFormat::Json;
+        #[allow(clippy::clone_on_copy)] // this test exercises Clone itself
         let cloned = format.clone();
         assert_eq!(format, cloned);
     }

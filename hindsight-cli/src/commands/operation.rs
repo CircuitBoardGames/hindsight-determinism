@@ -62,39 +62,6 @@ pub fn list(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::operation_summary_lines;
-    use crate::api::Operation;
-
-    fn operation(filename: Option<&str>) -> Operation {
-        Operation {
-            id: "op-1".to_string(),
-            task_type: "retain".to_string(),
-            items_count: 2,
-            filename: filename.map(str::to_string),
-            document_id: Some("doc-1".to_string()),
-            created_at: "2024-01-15T10:00:00Z".to_string(),
-            status: "completed".to_string(),
-            error_message: None,
-        }
-    }
-
-    #[test]
-    fn summary_lines_include_filename_when_present() {
-        let lines = operation_summary_lines(&operation(Some("notes.md")));
-        assert!(lines.iter().any(|line| line == "    Filename: notes.md"));
-        assert!(lines.iter().any(|line| line == "    Document ID: doc-1"));
-    }
-
-    #[test]
-    fn summary_lines_skip_filename_when_absent() {
-        let lines = operation_summary_lines(&operation(None));
-        assert!(!lines.iter().any(|line| line.starts_with("    Filename:")));
-        assert!(lines.iter().any(|line| line == "    Document ID: doc-1"));
-    }
-}
-
 /// Get the status of a specific operation
 pub fn get(
     client: &ApiClient,
@@ -259,4 +226,37 @@ pub fn delete(
         output::print_output(&result, output_format)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::operation_summary_lines;
+    use crate::api::Operation;
+
+    fn operation(filename: Option<&str>) -> Operation {
+        Operation {
+            id: "op-1".to_string(),
+            task_type: "retain".to_string(),
+            items_count: 2,
+            filename: filename.map(str::to_string),
+            document_id: Some("doc-1".to_string()),
+            created_at: "2024-01-15T10:00:00Z".to_string(),
+            status: "completed".to_string(),
+            error_message: None,
+        }
+    }
+
+    #[test]
+    fn summary_lines_include_filename_when_present() {
+        let lines = operation_summary_lines(&operation(Some("notes.md")));
+        assert!(lines.iter().any(|line| line == "    Filename: notes.md"));
+        assert!(lines.iter().any(|line| line == "    Document ID: doc-1"));
+    }
+
+    #[test]
+    fn summary_lines_skip_filename_when_absent() {
+        let lines = operation_summary_lines(&operation(None));
+        assert!(!lines.iter().any(|line| line.starts_with("    Filename:")));
+        assert!(lines.iter().any(|line| line == "    Document ID: doc-1"));
+    }
 }
