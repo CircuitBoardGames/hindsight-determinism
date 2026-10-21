@@ -34,6 +34,8 @@ concurrency:
 jobs:
   build-api-python-versions:
     runs-on: ubuntu-latest
+    # A draft never runs this: it runs once un-drafted.
+    if: ${{ !github.event.pull_request.draft }}
     timeout-minutes: 30
     strategy:
       matrix:
