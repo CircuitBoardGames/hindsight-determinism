@@ -1,0 +1,6 @@
+{
+  "true_upstream": "https://github.com/vectorize-io/hindsight",
+  "true_upstream_branch": "v0.10.2",
+  "last_synced_upstream_sha": "5fc4ce20917b916240cef27c212c387a177f115b",
+  "note": "Provenance marker for the CircuitBoardGames/ClaudeCode maintainer agent's P2 vendor-sync drift check. A RELEASE-BRANCH fork: branch airoboros/<version> carries this box's patches on upstream's v<version> tag (branch upstream-v0.10.2 is that tag's commit). true_upstream_branch names the TAG and last_synced_upstream_sha the commit it resolves to, so comparing them reads identical by construction: drift for this fork is a NEWER release tag (gh api repos/vectorize-io/hindsight/releases), and syncing means a new airoboros/<version> branch with the patches ported, then a deploy. Seeded 2026-10-27; upstream had already released v0.10.3, v1.0.0 and v1.1.0 by then, so this fork is behind. The fork's divergence: deterministic ordering in recall (each arm and BM25 on a total order, RRF tiebreak, hub#1029), the TypeSafe quantile shortlist and reranker usage logging, write-time retain dedup, entity-resolution pg_trgm probing, strict clippy on the Rust crates, and .forgejo/ CI."
+}
