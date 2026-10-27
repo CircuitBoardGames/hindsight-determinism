@@ -1,0 +1,6 @@
+{
+  "true_upstream": "https://github.com/vectorize-io/hindsight",
+  "true_upstream_branch": "v1.1.0",
+  "last_synced_upstream_sha": "a5a619b5ca59c5c39e0f96be6f7a31fabd136bd5",
+  "note": "Provenance marker for the CircuitBoardGames/ClaudeCode maintainer agent's P2 vendor-sync drift check. A RELEASE-BRANCH fork: branch airoboros/<version> carries this box's patches on upstream's v<version> tag (branch upstream-v1.1.0 is that tag's commit). true_upstream_branch names the TAG and last_synced_upstream_sha the commit it resolves to, so comparing them reads identical by construction: drift for this fork is a NEWER release tag (gh api repos/vectorize-io/hindsight/releases), and syncing means a new airoboros/<version> branch with the patches ported, then a deploy. Ported from airoboros/0.10.2 to v1.1.0 on 2026-10-27; v1.1.0 (published 2026-10-21) was upstream's latest release then. The fork's divergence: deterministic ordering in recall (each arm and BM25 on a total order, RRF tiebreak, hub#1029), the TypeSafe quantile shortlist, failover-chain pruning and reranker usage logging, write-time retain dedup, strict clippy on the Rust crates, and .forgejo/ CI. Entity-resolution pg_trgm probing at the merge floor is no longer a fork patch: upstream shipped the same max(probe, merge floor) as entity_trgm_probe_threshold in 5716c3ff1 (#5395)."
+}
