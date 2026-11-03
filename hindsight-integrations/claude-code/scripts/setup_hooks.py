@@ -68,6 +68,13 @@ def find_plugin_root() -> str:
     return os.path.join(cache_base, versions[0])
 
 
+def _command(plugin_root: str, script: str) -> str:
+    """The hook command for one script. A missing script exits 1, not python3's 2, which Claude Code
+    reads as a BLOCK: on UserPromptSubmit, every prompt refused."""
+    path = f"{plugin_root}/scripts/{script}"
+    return f'[ -r "{path}" ] || {{ echo "hindsight: hook script missing or unreadable: {path}" >&2; exit 1; }}; python3 "{path}"'
+
+
 def build_hooks(plugin_root: str) -> dict:
     recall_timeout = _recall_timeout()
     return {
@@ -76,7 +83,7 @@ def build_hooks(plugin_root: str) -> dict:
                 "hooks": [
                     {
                         "type": "command",
-                        "command": f'python3 "{plugin_root}/scripts/recall.py"',
+                        "command": _command(plugin_root, "recall.py"),
                         "timeout": recall_timeout,
                     }
                 ]
@@ -87,7 +94,7 @@ def build_hooks(plugin_root: str) -> dict:
                 "hooks": [
                     {
                         "type": "command",
-                        "command": f'python3 "{plugin_root}/scripts/retain.py"',
+                        "command": _command(plugin_root, "retain.py"),
                         "timeout": 15,
                         "async": True,
                     }
@@ -99,7 +106,7 @@ def build_hooks(plugin_root: str) -> dict:
                 "hooks": [
                     {
                         "type": "command",
-                        "command": f'python3 "{plugin_root}/scripts/session_start.py"',
+                        "command": _command(plugin_root, "session_start.py"),
                         "timeout": 5,
                     }
                 ]
@@ -110,7 +117,7 @@ def build_hooks(plugin_root: str) -> dict:
                 "hooks": [
                     {
                         "type": "command",
-                        "command": f'python3 "{plugin_root}/scripts/session_end.py"',
+                        "command": _command(plugin_root, "session_end.py"),
                         "timeout": 10,
                     }
                 ]

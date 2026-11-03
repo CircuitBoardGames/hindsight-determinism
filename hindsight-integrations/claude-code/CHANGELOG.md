@@ -18,6 +18,10 @@
 
 ### Changed
 
+- Fixed: a missing or unreadable hook script exits 1 and names itself on stderr, instead of python3's
+  exit 2, which Claude Code reads from `UserPromptSubmit` as a block (every prompt refused). Applies to
+  `hooks/hooks.json` and to the commands `setup_hooks.py` writes. The `|| python` fallback is gone: it
+  also re-ran a script that ran and failed. Plugin version 0.7.5-airoboros.3.
 - `retain.py` can serve a second harness (omp): optional hook_input keys `retain_context` and
   `retain_tags` replace `retainContext`/`retainTags` for that call, `skip_cadence` lets the caller own
   the turn cadence, and `source_timestamp` is sent as the memory's `timestamp`. The user's config file
