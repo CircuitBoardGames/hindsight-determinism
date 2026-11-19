@@ -88,7 +88,7 @@ def read_dsh_session(session_id: str) -> list:
         return []
     try:
         record = max(files, key=os.path.getmtime)
-        out = subprocess.run([shutil.which("zstd") or "zstd", "-dcq", record], capture_output=True, timeout=30).stdout
+        out = subprocess.run([shutil.which("zstd") or "zstd", "-dcq", record], capture_output=True, timeout=10).stdout  # under the Stop hook's 15 s
     except (OSError, subprocess.SubprocessError):
         return []
     messages = []
@@ -97,10 +97,13 @@ def read_dsh_session(session_id: str) -> list:
             r = json.loads(line)
         except ValueError:
             continue
-        d = r.get("data") if isinstance(r, dict) and isinstance(r.get("data"), dict) else {}
+        if not isinstance(r, dict):
+            continue
+        d = r.get("data") if isinstance(r.get("data"), dict) else {}
+        src = d.get("source") if isinstance(d.get("source"), dict) else {}
         if r.get("type") == "assistant/message" and isinstance(d.get("message"), dict):
             messages.append(d["message"])
-        elif r.get("type") == "user/message" and (d.get("source") or {}).get("kind") == "user":
+        elif r.get("type") == "user/message" and src.get("kind") == "user":
             messages.append({"role": "user", "content": d.get("content")})
     return messages
 

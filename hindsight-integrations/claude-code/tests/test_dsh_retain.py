@@ -99,7 +99,7 @@ def test_a_dsh_turn_recalls_a_fact_retained_from_a_dsh_turn(monkeypatch, tmp_pat
 
     assert len(bank.items) == 1, "the dsh turn was not retained"
     item = bank.items[0]
-    assert "source:dsh" in item["tags"]
+    assert isinstance(item["tags"], list) and "source:dsh" in item["tags"]
     assert FACT in item["content"] and "Where does staging" in item["content"]
 
     # A later dsh turn (another session) asks; the bridge's UserPromptSubmit payload, through the adapter.
@@ -181,5 +181,34 @@ def test_an_id_that_is_not_one_path_segment_finds_nothing(monkeypatch, tmp_path)
         urlopen_side_effect=bank.urlopen,
         extra_env={"DSH_HOME": str(tmp_path / "dsh")},
     )
+
+    assert bank.items == []
+
+
+def test_a_record_line_that_is_not_an_object_is_skipped_not_fatal(monkeypatch, tmp_path):
+    """Valid JSON that is not an event (a number, a list, null, a string `source`) is skipped; the
+    session's real turn is still retained (review H1: it raised AttributeError and lost every Stop)."""
+    _record(
+        tmp_path / "dsh",
+        [HEADER, 123, [1], None, {"type": "user/message", "data": {"source": "user", "content": "x"}},
+         _user("OPERATOR ASKS"), _assistant("an answer")],
+    )
+    bank = FakeBank()
+
+    _run_hook("retain", _dsh_stop(), monkeypatch, tmp_path, urlopen_side_effect=bank.urlopen,
+              extra_env={"DSH_HOME": str(tmp_path / "dsh")})
+
+    assert len(bank.items) == 1 and "OPERATOR ASKS" in bank.items[0]["content"]
+
+
+def test_no_harness_and_no_transcript_never_reads_a_dsh_record__control(monkeypatch, tmp_path):
+    """Claude Code with an empty transcript_path retains nothing, as before: only `harness: dsh` opens
+    the dsh record, even when one exists under the same session id."""
+    _record(tmp_path / "dsh", [HEADER, _user("dsh question"), _assistant("dsh answer")])
+    bank = FakeBank()
+    hook = {k: v for k, v in _dsh_stop().items() if k != "harness"}
+
+    _run_hook("retain", hook, monkeypatch, tmp_path, urlopen_side_effect=bank.urlopen,
+              extra_env={"DSH_HOME": str(tmp_path / "dsh")})
 
     assert bank.items == []
