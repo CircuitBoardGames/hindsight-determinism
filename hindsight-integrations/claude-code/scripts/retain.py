@@ -6,7 +6,7 @@ Adapted for Claude Code hooks (ephemeral process, JSON stdin/stdout).
 
 Flow:
   1. Read hook input from stdin (session_id, transcript_path, cwd)
-  2. Read conversation transcript from transcript_path
+  2. Read conversation transcript from transcript_path (under dsh, from the dsh session record)
   3. Apply chunked retention logic (retainEveryNTurns + overlap window)
   4. Resolve API URL (external, existing local, or auto-start daemon)
   5. Derive bank ID and ensure mission
@@ -17,8 +17,12 @@ Exit codes:
   0 — always (graceful degradation on any error)
 """
 
+import glob
 import json
 import os
+import re
+import shutil
+import subprocess
 import sys
 import time
 
@@ -69,6 +73,38 @@ def read_transcript(transcript_path: str) -> list:
     return messages
 
 
+def read_dsh_session(session_id: str) -> list:
+    """Messages from a dsh session's own record, found by its id: dsh's hook bridge sends
+    `transcript_path: ""`. $DSH_HOME/sessions/<cwd slug>/<id>/session*.jsonl.zstd, read as
+    Session-Succession's dsh trigger reads it: each `assistant/message`'s `data.message`, and a
+    `user/message` of source kind `user` only (a peer, a kickoff or a plugin notice has its own kind,
+    and is not the operator speaking). A record still being written ends in an unfinished zstd
+    frame; what decoded before it is used."""
+    if not re.fullmatch(r"[0-9A-Za-z][0-9A-Za-z_-]*", session_id or ""):  # one path segment, no glob
+        return []
+    home = os.environ.get("DSH_HOME") or os.path.expanduser("~/.dsh")
+    files = glob.glob(os.path.join(glob.escape(home), "sessions", "*", session_id, "session*.jsonl.zstd"))
+    if not files:
+        return []
+    try:
+        record = max(files, key=os.path.getmtime)
+        out = subprocess.run([shutil.which("zstd") or "zstd", "-dcq", record], capture_output=True, timeout=30).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    messages = []
+    for line in out.decode(errors="replace").splitlines():
+        try:
+            r = json.loads(line)
+        except ValueError:
+            continue
+        d = r.get("data") if isinstance(r, dict) and isinstance(r.get("data"), dict) else {}
+        if r.get("type") == "assistant/message" and isinstance(d.get("message"), dict):
+            messages.append(d["message"])
+        elif r.get("type") == "user/message" and (d.get("source") or {}).get("kind") == "user":
+            messages.append({"role": "user", "content": d.get("content")})
+    return messages
+
+
 def run_retain(hook_input: dict, force: bool = False) -> None:
     config = load_config()
     # A second harness (omp) reuses this script for its retain so the noise filter in lib/content.py
@@ -93,9 +129,11 @@ def run_retain(hook_input: dict, force: bool = False) -> None:
 
     session_id = hook_input.get("session_id", "unknown")
     transcript_path = hook_input.get("transcript_path", "")
+    # `harness: dsh` is added by the hub's dsh-adapter; dsh's own bridge sends no transcript.
+    dsh = hook_input.get("harness") == "dsh"
 
     # Read full transcript
-    all_messages = read_transcript(transcript_path)
+    all_messages = read_dsh_session(session_id) if dsh and not transcript_path else read_transcript(transcript_path)
     if not all_messages:
         debug_log(config, "No messages in transcript, skipping retain")
         return
@@ -227,6 +265,8 @@ def run_retain(hook_input: dict, force: bool = False) -> None:
             tags = None
     else:
         tags = None
+    if dsh:  # every dsh-origin fact is tagged (operator decision, ClaudeCode#1806)
+        tags = (tags or []) + ["source:dsh"]
 
     # Metadata: merge built-in defaults with user-configured extras
     metadata = {
