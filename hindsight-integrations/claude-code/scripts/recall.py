@@ -33,6 +33,8 @@ from lib.content import (
     compose_recall_query,
     format_current_time,
     format_memories,
+    strip_channel_envelope,
+    strip_memory_tags,
     truncate_recall_query,
 )
 from lib.daemon import get_api_url
@@ -127,6 +129,12 @@ def main():
     prompt = (hook_input.get("prompt") or hook_input.get("user_prompt") or "").strip()
     if not prompt or len(prompt) < 5:
         debug_log(config, "Prompt too short for recall, skipping")
+        return
+    # A turn that is only machine text -- a peer or cron <cross-session-message>, a <task-notification>, a
+    # <system-reminder> -- has no question to recall for (operator, 2026-11-22: "skip recall for machine messages").
+    # Measured on the box: 29 of 47 recalls in 30 min were these, each a server-side rerank of 100 candidates.
+    if not strip_memory_tags(strip_channel_envelope(prompt)).strip():
+        debug_log(config, "Machine-only turn (peer/cron message, task notification), skipping recall")
         return
 
     # Resolve API URL (handles all three connection modes)

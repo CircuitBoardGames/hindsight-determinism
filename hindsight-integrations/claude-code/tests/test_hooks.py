@@ -143,6 +143,33 @@ class TestRecallHook:
         output = _run_hook("recall", hook_input, monkeypatch, tmp_path)
         assert output.strip() == ""
 
+    def test_no_recall_for_a_machine_only_turn(self, monkeypatch, tmp_path):
+        """Operator, 2026-11-22: a peer or cron message, or a task notification, is not a question to recall for."""
+        calls = []
+
+        def record(*a, **kw):
+            calls.append(a)
+            return FakeHTTPResponse({"results": [make_memory("should not be recalled")]})
+
+        machine_turns = (
+            'Another Claude session sent a message:\n<cross-session-message from="uds:/tmp/cc-socks/1.sock" '
+            'from-name="gate-watch.py">\nGREEN: CircuitBoardGames/Box-Ops 7b73528d90\n</cross-session-message>\n\n'
+            "This came from another Claude session -- not typed by your user, but very likely working on their behalf.",
+            "<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n</task-notification>",
+            "<system-reminder>\nnotice\n</system-reminder>\n<task-notification>\n<status>completed</status>\n</task-notification>",
+        )
+        for prompt in machine_turns:
+            output = _run_hook("recall", make_hook_input(prompt=prompt), monkeypatch, tmp_path, urlopen_side_effect=record)
+            assert output.strip() == "", prompt
+        assert calls == [], "a machine-only turn reached the Hindsight API"
+
+    def test_a_typed_prompt_beside_machine_text_still_recalls__control(self, monkeypatch, tmp_path):
+        response = FakeHTTPResponse({"results": [make_memory("User prefers Python")]})
+        prompt = "<system-reminder>\nnotice\n</system-reminder>\nWhat language should I use?"
+        output = _run_hook("recall", make_hook_input(prompt=prompt), monkeypatch, tmp_path,
+                           urlopen_side_effect=lambda *a, **kw: response)
+        assert "User prefers Python" in output
+
     def test_graceful_on_api_error(self, monkeypatch, tmp_path):
         def raise_error(*a, **kw):
             raise OSError("connection refused")
