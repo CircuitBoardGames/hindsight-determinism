@@ -3,6 +3,14 @@
 # Bootstraps the venv if missing; otherwise just execs.
 set -e
 
+# omp substitutes ${CLAUDE_PLUGIN_ROOT} into this launcher's command line but does not export it, so under omp
+# REQ_SRC was /requirements.txt and pip ended the server before it answered (0.7.5-airoboros.6). The root is
+# the directory above this script's own scripts/; exported, so lib/config.py's settings lookup sees it too.
+if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+  CLAUDE_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fi
+export CLAUDE_PLUGIN_ROOT
+
 # Claude Code sets CLAUDE_PLUGIN_DATA. omp, which loads this plugin's MCP server too, expands only
 # ${CLAUDE_PLUGIN_ROOT}, so under omp it was empty and `mkdir -p ""` ended the server (exit 1) before
 # it answered. Fall back to the directory Claude Code itself gives this plugin (data/<plugin>-<marketplace>),

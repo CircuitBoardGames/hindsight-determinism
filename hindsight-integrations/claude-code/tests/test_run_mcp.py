@@ -132,7 +132,7 @@ def _run_launcher(tmp_path, env_extra, venv_dir):
     fake.write_text(
         "#!/bin/sh\n"
         '[ "$1" = -c ] && exit 0\n'
-        'printf "data=%s\\ncwd=%s\\nargv=%s\\n" "$CLAUDE_PLUGIN_DATA" "$(pwd)" "$*" > "$RECORD"\n'
+        'printf "data=%s\\ncwd=%s\\nargv=%s\\nroot=%s\\n" "$CLAUDE_PLUGIN_DATA" "$(pwd)" "$*" "$CLAUDE_PLUGIN_ROOT" > "$RECORD"\n'
     )
     fake.chmod(0o755)
     plugin_root = os.path.abspath(os.path.join(SCRIPTS_DIR, ".."))
@@ -140,13 +140,27 @@ def _run_launcher(tmp_path, env_extra, venv_dir):
         (venv_dir.parent / "requirements.txt").write_text(fh.read())
     env = {"PATH": os.environ["PATH"], "HOME": str(tmp_path / "home"), "RECORD": str(record),
            "CLAUDE_PLUGIN_ROOT": plugin_root, **env_extra}
+    env = {k: v for k, v in env.items() if v is not None}  # None: leave the variable unset, as omp does
     result = subprocess.run(["bash", RUN_MCP_SH], env=env, cwd=str(tmp_path), capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stderr
     return dict(line.split("=", 1) for line in record.read_text().splitlines())
 
 
+class TestOmpLaunch:
+    """omp substitutes ${CLAUDE_PLUGIN_ROOT} into the command line but exports neither variable."""
+
+    def test_neither_variable_set_still_starts_the_server_from_its_own_root(self, tmp_path):
+        """RED on 0.7.5-airoboros.6: REQ_SRC was /requirements.txt and pip exited 1."""
+        data = tmp_path / "home" / ".claude" / "plugins" / "data" / "hindsight-memory-hindsight"
+        got = _run_launcher(tmp_path, {"CLAUDE_PLUGIN_ROOT": None}, data / "venv")
+        root = os.path.abspath(os.path.join(SCRIPTS_DIR, ".."))
+        assert got["root"] == root, "exported, so lib/config.py finds the plugin's settings.json"
+        assert got["argv"].endswith(os.path.join(root, "scripts", "mcp_server.py"))
+        assert got["data"] == str(data)
+
+
 class TestPluginDataDefault:
-    """omp loads this MCP server but sets only CLAUDE_PLUGIN_ROOT, never CLAUDE_PLUGIN_DATA."""
+    """Claude Code sets both variables; omp sets neither in the environment."""
 
     def test_unset_plugin_data_falls_back_to_claude_codes_own_dir(self, tmp_path):
         """RED before the fix: `mkdir -p ""` failed and the launcher exited 1 before the server ran."""
