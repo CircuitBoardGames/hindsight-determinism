@@ -150,7 +150,7 @@ class TestOmpLaunch:
     """omp substitutes ${CLAUDE_PLUGIN_ROOT} into the command line but exports neither variable."""
 
     def test_neither_variable_set_still_starts_the_server_from_its_own_root(self, tmp_path):
-        """RED on 0.7.5-airoboros.6: REQ_SRC was /requirements.txt and pip exited 1."""
+        """RED on 0.7.5-airoboros.6: REQ_SRC was /requirements.txt; on a real venv pip failed, here there is no pip."""
         data = tmp_path / "home" / ".claude" / "plugins" / "data" / "hindsight-memory-hindsight"
         got = _run_launcher(tmp_path, {"CLAUDE_PLUGIN_ROOT": None}, data / "venv")
         root = os.path.abspath(os.path.join(SCRIPTS_DIR, ".."))

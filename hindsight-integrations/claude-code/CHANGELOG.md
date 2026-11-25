@@ -19,7 +19,7 @@
 ### Changed
 
 - Fixed: `run_mcp.sh` also defaults `CLAUDE_PLUGIN_ROOT`, to the directory above its own `scripts/`, and exports
-  it. omp substitutes `${CLAUDE_PLUGIN_ROOT}` into the launcher's command line but does not set it in the
+  it for the server it execs. omp substitutes `${CLAUDE_PLUGIN_ROOT}` into the launcher's command line but does not set it in the
   environment, so under omp the launcher read `/requirements.txt` and exited 1 before answering (0.7.5-airoboros.6
   fixed only `CLAUDE_PLUGIN_DATA`). Plugin version 0.7.5-airoboros.7.
 - Fixed: `run_mcp.sh` falls back to `${CLAUDE_CONFIG_DIR:-~/.claude}/plugins/data/hindsight-memory-hindsight`

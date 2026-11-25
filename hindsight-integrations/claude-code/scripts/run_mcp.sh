@@ -5,7 +5,8 @@ set -e
 
 # omp substitutes ${CLAUDE_PLUGIN_ROOT} into this launcher's command line but does not export it, so under omp
 # REQ_SRC was /requirements.txt and pip ended the server before it answered (0.7.5-airoboros.6). The root is
-# the directory above this script's own scripts/; exported, so lib/config.py's settings lookup sees it too.
+# the directory above this script's own scripts/, exported for the server it execs. A symlink to this
+# script, run from elsewhere with no CLAUDE_PLUGIN_ROOT, resolves the link's directory instead: unsupported.
 if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ]; then
   CLAUDE_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fi
