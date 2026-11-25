@@ -30,8 +30,10 @@ def _state_dir() -> str:
     """Get the state directory, creating it if needed."""
     plugin_data = os.environ.get("CLAUDE_PLUGIN_DATA", "")
     if not plugin_data:
-        # Fallback to a temp location for testing
-        plugin_data = os.path.join(os.path.expanduser("~"), ".claude", "plugins", "data", "hindsight-memory")
+        # The same default as run_mcp.sh: the dir Claude Code gives this plugin (data/<plugin>-<marketplace>),
+        # so a hook run without the env (omp, a hand run) shares state with the MCP server.
+        config_dir = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+        plugin_data = os.path.join(config_dir, "plugins", "data", "hindsight-memory-hindsight")
     state_dir = os.path.join(plugin_data, "state")
     os.makedirs(state_dir, exist_ok=True)
     return state_dir

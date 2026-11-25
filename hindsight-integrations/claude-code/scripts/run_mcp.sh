@@ -7,7 +7,11 @@ set -e
 # ${CLAUDE_PLUGIN_ROOT}, so under omp it was empty and `mkdir -p ""` ended the server (exit 1) before
 # it answered. Fall back to the directory Claude Code itself gives this plugin (data/<plugin>-<marketplace>),
 # so both harnesses share one venv and one state dir.
-: "${CLAUDE_PLUGIN_DATA:=${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/data/hindsight-memory-hindsight}"
+# scripts/lib/state.py falls back to the same dir.
+if [ -z "${CLAUDE_PLUGIN_DATA:-}" ]; then
+  _cfg="${CLAUDE_CONFIG_DIR:-${HOME:?run_mcp.sh: CLAUDE_PLUGIN_DATA, CLAUDE_CONFIG_DIR and HOME are all unset}/.claude}"
+  CLAUDE_PLUGIN_DATA="${_cfg%/}/plugins/data/hindsight-memory-hindsight"
+fi
 export CLAUDE_PLUGIN_DATA
 
 VENV="${CLAUDE_PLUGIN_DATA}/venv"

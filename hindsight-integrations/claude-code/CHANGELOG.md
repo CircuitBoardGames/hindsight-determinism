@@ -20,8 +20,9 @@
 
 - Fixed: `run_mcp.sh` falls back to `${CLAUDE_CONFIG_DIR:-~/.claude}/plugins/data/hindsight-memory-hindsight`
   when `CLAUDE_PLUGIN_DATA` is unset, and exports it. omp loads this plugin's MCP server but expands only
-  `${CLAUDE_PLUGIN_ROOT}`, so the launcher ran `mkdir -p ""` and exited 1 before answering. Plugin
-  version 0.7.5-airoboros.6.
+  `${CLAUDE_PLUGIN_ROOT}`, so the launcher ran `mkdir -p ""` and exited 1 before answering. `lib/state.py`'s
+  fallback is the same dir (it was `data/hindsight-memory`), and with neither `CLAUDE_CONFIG_DIR` nor `HOME`
+  the launcher says so instead of failing on `/.claude`. Plugin version 0.7.5-airoboros.6.
 - Fixed: a missing or unreadable hook script exits 1 and names itself on stderr, instead of python3's
   exit 2, which Claude Code reads from `UserPromptSubmit` as a block (every prompt refused). Applies to
   `hooks/hooks.json` and to the commands `setup_hooks.py` writes. The `|| python` fallback is gone: it

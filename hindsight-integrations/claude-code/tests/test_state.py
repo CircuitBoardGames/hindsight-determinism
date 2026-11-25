@@ -149,3 +149,15 @@ class TestReadWriteState:
         write_state("test_overwrite.json", {"v": 1})
         write_state("test_overwrite.json", {"v": 2})
         assert read_state("test_overwrite.json") == {"v": 2}
+
+
+def test_state_dir_without_plugin_data_matches_the_launchers_default(monkeypatch, tmp_path):
+    """run_mcp.sh and state.py must agree, or omp's MCP and a hook run without the env keep two states."""
+    from lib import state
+
+    monkeypatch.delenv("CLAUDE_PLUGIN_DATA", raising=False)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "cfg"))
+    assert state._state_dir() == str(tmp_path / "cfg" / "plugins" / "data" / "hindsight-memory-hindsight" / "state")
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    assert state._state_dir() == str(tmp_path / "home" / ".claude" / "plugins" / "data" / "hindsight-memory-hindsight" / "state")

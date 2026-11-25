@@ -140,7 +140,7 @@ def _run_launcher(tmp_path, env_extra, venv_dir):
         (venv_dir.parent / "requirements.txt").write_text(fh.read())
     env = {"PATH": os.environ["PATH"], "HOME": str(tmp_path / "home"), "RECORD": str(record),
            "CLAUDE_PLUGIN_ROOT": plugin_root, **env_extra}
-    result = subprocess.run(["bash", RUN_MCP_SH], env=env, cwd=str(tmp_path), capture_output=True, text=True)
+    result = subprocess.run(["bash", RUN_MCP_SH], env=env, cwd=str(tmp_path), capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stderr
     return dict(line.split("=", 1) for line in record.read_text().splitlines())
 
@@ -160,6 +160,22 @@ class TestPluginDataDefault:
         data = tmp_path / "cfg" / "plugins" / "data" / "hindsight-memory-hindsight"
         got = _run_launcher(tmp_path, {"CLAUDE_CONFIG_DIR": str(tmp_path / "cfg")}, data / "venv")
         assert got["data"] == str(data)
+
+    def test_an_empty_plugin_data_is_treated_as_unset(self, tmp_path):
+        data = tmp_path / "home" / ".claude" / "plugins" / "data" / "hindsight-memory-hindsight"
+        got = _run_launcher(tmp_path, {"CLAUDE_PLUGIN_DATA": ""}, data / "venv")
+        assert got["data"] == str(data)
+
+    def test_a_trailing_slash_on_claude_config_dir_adds_no_double_slash(self, tmp_path):
+        data = tmp_path / "cfg" / "plugins" / "data" / "hindsight-memory-hindsight"
+        got = _run_launcher(tmp_path, {"CLAUDE_CONFIG_DIR": str(tmp_path / "cfg") + "/"}, data / "venv")
+        assert got["data"] == str(data)
+
+    def test_no_home_and_no_config_dir_fails_with_a_message(self, tmp_path):
+        r = subprocess.run(["bash", RUN_MCP_SH], env={"PATH": os.environ["PATH"]}, cwd=str(tmp_path),
+                           capture_output=True, text=True, check=False)
+        assert r.returncode != 0
+        assert "CLAUDE_PLUGIN_DATA, CLAUDE_CONFIG_DIR and HOME are all unset" in r.stderr, r.stderr
 
     def test_a_set_plugin_data_still_wins(self, tmp_path):
         data = tmp_path / "given"
