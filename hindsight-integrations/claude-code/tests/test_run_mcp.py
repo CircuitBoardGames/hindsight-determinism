@@ -121,6 +121,52 @@ class TestResolvePyVenvLayouts:
         )
 
 
+def _run_launcher(tmp_path, env_extra, venv_dir):
+    """Run the whole launcher against a fabricated venv whose python only records how it was exec'd.
+
+    `-c "import mcp"` succeeds and the requirements cache matches, so nothing is installed or started.
+    """
+    record = tmp_path / "record"
+    fake = venv_dir / "bin" / "python"
+    fake.parent.mkdir(parents=True)
+    fake.write_text(
+        "#!/bin/sh\n"
+        '[ "$1" = -c ] && exit 0\n'
+        'printf "data=%s\\ncwd=%s\\nargv=%s\\n" "$CLAUDE_PLUGIN_DATA" "$(pwd)" "$*" > "$RECORD"\n'
+    )
+    fake.chmod(0o755)
+    plugin_root = os.path.abspath(os.path.join(SCRIPTS_DIR, ".."))
+    with open(os.path.join(plugin_root, "requirements.txt"), encoding="utf-8") as fh:
+        (venv_dir.parent / "requirements.txt").write_text(fh.read())
+    env = {"PATH": os.environ["PATH"], "HOME": str(tmp_path / "home"), "RECORD": str(record),
+           "CLAUDE_PLUGIN_ROOT": plugin_root, **env_extra}
+    result = subprocess.run(["bash", RUN_MCP_SH], env=env, cwd=str(tmp_path), capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    return dict(line.split("=", 1) for line in record.read_text().splitlines())
+
+
+class TestPluginDataDefault:
+    """omp loads this MCP server but sets only CLAUDE_PLUGIN_ROOT, never CLAUDE_PLUGIN_DATA."""
+
+    def test_unset_plugin_data_falls_back_to_claude_codes_own_dir(self, tmp_path):
+        """RED before the fix: `mkdir -p ""` failed and the launcher exited 1 before the server ran."""
+        data = tmp_path / "home" / ".claude" / "plugins" / "data" / "hindsight-memory-hindsight"
+        got = _run_launcher(tmp_path, {}, data / "venv")
+        assert got["data"] == str(data), "the server must see the defaulted dir, for state.py"
+        assert got["cwd"] == str(data)
+        assert got["argv"].endswith("scripts/mcp_server.py")
+
+    def test_claude_config_dir_is_honoured(self, tmp_path):
+        data = tmp_path / "cfg" / "plugins" / "data" / "hindsight-memory-hindsight"
+        got = _run_launcher(tmp_path, {"CLAUDE_CONFIG_DIR": str(tmp_path / "cfg")}, data / "venv")
+        assert got["data"] == str(data)
+
+    def test_a_set_plugin_data_still_wins(self, tmp_path):
+        data = tmp_path / "given"
+        got = _run_launcher(tmp_path, {"CLAUDE_PLUGIN_DATA": str(data)}, data / "venv")
+        assert got["data"] == str(data) and got["cwd"] == str(data)
+
+
 class TestMcpServerWorkingDirectory:
     """The launcher must not run the server from Claude Code's project cwd."""
 

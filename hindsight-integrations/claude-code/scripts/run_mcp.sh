@@ -3,6 +3,13 @@
 # Bootstraps the venv if missing; otherwise just execs.
 set -e
 
+# Claude Code sets CLAUDE_PLUGIN_DATA. omp, which loads this plugin's MCP server too, expands only
+# ${CLAUDE_PLUGIN_ROOT}, so under omp it was empty and `mkdir -p ""` ended the server (exit 1) before
+# it answered. Fall back to the directory Claude Code itself gives this plugin (data/<plugin>-<marketplace>),
+# so both harnesses share one venv and one state dir.
+: "${CLAUDE_PLUGIN_DATA:=${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/data/hindsight-memory-hindsight}"
+export CLAUDE_PLUGIN_DATA
+
 VENV="${CLAUDE_PLUGIN_DATA}/venv"
 REQ_SRC="${CLAUDE_PLUGIN_ROOT}/requirements.txt"
 REQ_CACHED="${CLAUDE_PLUGIN_DATA}/requirements.txt"
